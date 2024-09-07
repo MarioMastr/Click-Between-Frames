@@ -89,7 +89,11 @@ void updateInputQueueAndTime(int stepCount)
 
             }
             else {
+#ifdef GEODE_IS_WINDOWS
                 while (!inputQueue.empty() && inputQueue.front().time.QuadPart <= currentFrameTime.QuadPart) {
+#elif defined(GEODE_IS_MACOS)
+                while (!inputQueue.empty() && inputQueue.front().time <= currentFrameTime) {
+#endif
                     inputQueueCopy.push(inputQueue.front());
                     inputQueue.pop();
                 }
