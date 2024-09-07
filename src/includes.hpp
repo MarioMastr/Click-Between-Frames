@@ -28,7 +28,7 @@ enum State : bool {
 };
 
 struct InputEvent {
-	LARGE_INTEGER time;
+	__int64_t time;
 	PlayerButton inputType;
 	bool inputState;
 	bool player;
@@ -43,12 +43,10 @@ struct Step {
 extern std::queue<struct InputEvent> inputQueue;
 
 extern std::array<std::unordered_set<size_t>, 6> inputBinds;
-extern std::unordered_set<USHORT> heldInputs;
+extern std::unordered_set<uint16_t> heldInputs;
 
 extern std::mutex inputQueueLock;
 extern std::mutex keybindsLock;
 
 extern std::atomic<bool> enableRightClick;
 extern bool threadPriority;
-
-void inputThread();
