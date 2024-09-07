@@ -21,7 +21,11 @@
 
 constexpr double smallestFloat = std::numeric_limits<float>::min();
 
+#ifdef GEODE_IS_MACOS
 const InputEvent emptyInput = InputEvent{ 0, PlayerButton::Jump, 0, 0 };
+#elif defined(GEODE_IS_WINDOWS)
+const InputEvent emptyInput = InputEvent{ 0, 0, PlayerButton::Jump, 0, 0 };
+#endif
 const Step emptyStep        = Step{ emptyInput, 1.0, true };
 
 bool actualDelta;
@@ -29,11 +33,21 @@ bool actualDelta;
 std::queue<struct InputEvent> inputQueueCopy;
 std::queue<struct Step> stepQueue;
 
-InputEvent nextInput = { 0, PlayerButton::Jump, 1, 0 };
+#ifdef GEODE_IS_MACOS
+InputEvent nextInput = { 0, PlayerButton::Jump, 0, 0 };
+#elif defined(GEODE_IS_WINDOWS)
+InputEvent nextInput = { 0, 0, PlayerButton::Jump, 0 };
+#endif
 
+#ifdef GEODE_IS_MACOS
 __int64_t lastFrameTime;
 __int64_t lastPhysicsFrameTime;
 __int64_t currentFrameTime;
+#elif defined (GEODE_IS_WINDOWS)
+LARGE_INTEGER lastFrameTime;
+LARGE_INTEGER lastPhysicsFrameTime;
+LARGE_INTEGER currentFrameTime;
+#endif
 
 bool firstFrame  = true;
 bool skipUpdate  = true;
@@ -43,8 +57,10 @@ bool lateCutoff;
 void updateInputQueueAndTime(int stepCount)
 {
     PlayLayer *playLayer = PlayLayer::get();
+#if defined(GEODE_IS_MACOS)
 	mach_timebase_info_data_t info;
 	mach_timebase_info(&info);
+#endif
     if (!playLayer || GameManager::sharedState()->getEditorLayer() || playLayer->m_player1->m_isDead) {
         enableInput = true;
         firstFrame  = true;
@@ -62,7 +78,7 @@ void updateInputQueueAndTime(int stepCount)
             if (lateCutoff) {
 #if defined(GEODE_IS_WINDOWS)
                 QueryPerformanceCounter(&currentFrameTime);
-#elif defined(GEODE_IS_ARM_MAC)
+#elif defined(GEODE_IS_MACOS)
                 currentFrameTime = mach_absolute_time();
 				currentFrameTime *= info.numer;
 				currentFrameTime /= info.denom;
@@ -73,7 +89,7 @@ void updateInputQueueAndTime(int stepCount)
 
             }
             else {
-                while (!inputQueue.empty() && inputQueue.front().time <= currentFrameTime) {
+                while (!inputQueue.empty() && inputQueue.front().time.QuadPart <= currentFrameTime.QuadPart) {
                     inputQueueCopy.push(inputQueue.front());
                     inputQueue.pop();
                 }
@@ -82,8 +98,10 @@ void updateInputQueueAndTime(int stepCount)
 
         lastPhysicsFrameTime = currentFrameTime;
 
+#if defined(GEODE_IS_MACOS)
         __int64_t deltaTime;
         __int64_t stepDelta;
+
         deltaTime = currentFrameTime - lastFrameTime;
         stepDelta = (deltaTime / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
 
@@ -106,6 +124,33 @@ void updateInputQueueAndTime(int stepCount)
                 break;
             }
         }
+#elif defined(GEODE_IS_WINDOWS)
+        LARGE_INTEGER deltaTime;
+        LARGE_INTEGER stepDelta;
+        
+        deltaTime.QuadPart = currentFrameTime.QuadPart - lastFrameTime.QuadPart;
+        stepDelta.QuadPart = (deltaTime.QuadPart / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
+
+        for (int i = 0; i < stepCount; i++) {
+            double lastDFactor = 0.0;
+            while (true) {
+                InputEvent front;
+                if (!inputQueueCopy.empty()) {
+                    front = inputQueueCopy.front();
+                    if (front.time.QuadPart - lastFrameTime.QuadPart < stepDelta.QuadPart * (i + 1)) {
+                        double dFactor = static_cast<double>((front.time.QuadPart - lastFrameTime.QuadPart) % stepDelta.QuadPart) / stepDelta.QuadPart;
+                        stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, smallestFloat, 1.0), false });
+                        lastDFactor = dFactor;
+                        inputQueueCopy.pop();
+                        continue;
+                    }
+                }
+                front = nextInput;
+                stepQueue.emplace(Step{ front, std::max(smallestFloat, 1.0 - lastDFactor), true });
+                break;
+            }
+        }
+#endif
     }
 }
 
@@ -119,7 +164,11 @@ Step updateDeltaFactorAndInput()
     Step front         = stepQueue.front();
     double deltaFactor = front.deltaFactor;
 
+#ifdef GEODE_IS_MACOS
     if (nextInput.time != 0) {
+#elif defined(GEODE_IS_WINDOWS)
+    if (nextInput.time.QuadPart != 0) {
+#endif
         PlayLayer *playLayer = PlayLayer::get();
 
         enableInput = true;
@@ -245,8 +294,10 @@ class $modify(CCDirector) {
 	void setDeltaTime(float dTime) {
 		PlayLayer* playLayer = PlayLayer::get();
 		CCNode* par;
-			mach_timebase_info_data_t info;
-	mach_timebase_info(&info);
+#if defined(GEODE_IS_ARM_MAC)
+		mach_timebase_info_data_t info;
+	    mach_timebase_info(&info);
+#endif
 
 if (!lateCutoff) {
 #if defined(GEODE_IS_WINDOWS)
@@ -455,9 +506,9 @@ if (!softToggle || actualDelta) {
 }
 ;
 
+#ifdef GEODE_IS_WINDOWS
 Patch *patch;
 
-/* // cba to find the address lmfao
 void toggleMod(bool disable) {
         void* addr = reinterpret_cast<void*>(geode::base::get() + 0x5ec8e8);
         int oldProtect;
@@ -474,7 +525,7 @@ void toggleMod(bool disable) {
 
         softToggle = disable;
 }
-*/
+#endif
 
 $on_mod(Loaded)
 {

@@ -28,7 +28,11 @@ enum State : bool {
 };
 
 struct InputEvent {
+#ifdef GEODE_IS_MACOS
 	__int64_t time;
+#elif defined (GEODE_IS_WINDOWS)
+	LARGE_INTEGER time;
+#endif
 	PlayerButton inputType;
 	bool inputState;
 	bool player;
@@ -50,3 +54,7 @@ extern std::mutex keybindsLock;
 
 extern std::atomic<bool> enableRightClick;
 extern bool threadPriority;
+
+#ifdef GEODE_IS_WINDOWS
+void inputThread();
+#endif
