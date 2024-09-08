@@ -1,7 +1,7 @@
 #include "includes.hpp"
 
-#if defined(GEODE_IS_ARM_MAC)
-#define CommentTypeDummy CommentType
+#if defined(GEODE_IS_MACOS)
+#define CommentType CommentTypeDummy
 #include <mach/mach_time.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
@@ -362,7 +362,7 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
 
 $execute
 {
-    auto method            = class_getInstanceMethod(objc_getClass("NSApplication"), @selector(sendEvent:));
+    auto method = class_getInstanceMethod(objc_getClass("NSApplication"), @selector(sendEvent:));
     s_originalSendEventIMP = method_getImplementation(method);
     method_setImplementation(method, (IMP)&sendEvent);
 }
