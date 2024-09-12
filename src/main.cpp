@@ -290,6 +290,7 @@ class $modify(PlayLayer)
     }
 };
 
+#ifdef GEODE_IS_MACOS
 class $modify(GJBaseGameLayer)
 {
     void update(float p0)
@@ -298,6 +299,7 @@ class $modify(GJBaseGameLayer)
         newGetModifiedDelta(this, p0);
     }
 };
+#endif
 
 bool softToggle; // cant just disable all hooks bc thatll cause a memory leak with inputQueue, may improve this in the future
 
