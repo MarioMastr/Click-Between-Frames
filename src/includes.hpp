@@ -29,7 +29,7 @@ enum State : bool {
 
 struct InputEvent {
 #ifdef GEODE_IS_MACOS
-	__int64_t time;
+	uint64_t time;
 #elif defined (GEODE_IS_WINDOWS)
 	LARGE_INTEGER time;
 #endif

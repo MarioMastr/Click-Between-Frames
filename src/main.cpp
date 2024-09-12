@@ -56,106 +56,99 @@ bool lateCutoff;
 
 void updateInputQueueAndTime(int stepCount)
 {
-    PlayLayer *playLayer = PlayLayer::get();
-#if defined(GEODE_IS_MACOS)
-	mach_timebase_info_data_t info;
-	mach_timebase_info(&info);
-#endif
-    if (!playLayer || GameManager::sharedState()->getEditorLayer() || playLayer->m_player1->m_isDead) {
-        enableInput = true;
-        firstFrame  = true;
-        skipUpdate  = true;
-        return;
-    }
-    else {
-        nextInput     = emptyInput;
-        lastFrameTime = lastPhysicsFrameTime;
-        stepQueue     = {}; // just in case
+	PlayLayer* playLayer = PlayLayer::get();
+	if (!playLayer 
+		|| GameManager::sharedState()->getEditorLayer() 
+		|| playLayer->m_player1->m_isDead) 
+	{
+		enableInput = true;
+		firstFrame = true;
+		skipUpdate = true;
+		return;
+	}
+	else {
+		nextInput = emptyInput;
+		lastFrameTime = lastPhysicsFrameTime;
+		stepQueue = {}; // just in case
 
-        {
-            std::lock_guard lock(inputQueueLock);
+		{
+			std::lock_guard lock(inputQueueLock);
 
-            if (lateCutoff) {
+			if (lateCutoff) {
 #if defined(GEODE_IS_WINDOWS)
                 QueryPerformanceCounter(&currentFrameTime);
 #elif defined(GEODE_IS_MACOS)
                 currentFrameTime = mach_absolute_time();
-				currentFrameTime *= info.numer;
-				currentFrameTime /= info.denom;
-
 #endif
-                inputQueueCopy = inputQueue;
-				inputQueue = {};
-
-            }
-            else {
+				inputQueueCopy = inputQueue;
+                inputQueue = {};
+			}
+			else {
 #ifdef GEODE_IS_WINDOWS
                 while (!inputQueue.empty() && inputQueue.front().time.QuadPart <= currentFrameTime.QuadPart) {
 #elif defined(GEODE_IS_MACOS)
                 while (!inputQueue.empty() && inputQueue.front().time <= currentFrameTime) {
 #endif
-                    inputQueueCopy.push(inputQueue.front());
-                    inputQueue.pop();
-                }
-            }
-        }
+					inputQueueCopy.push(inputQueue.front());
+					inputQueue.pop();
+				}
+			}
+		}
 
-        lastPhysicsFrameTime = currentFrameTime;
+		lastPhysicsFrameTime = currentFrameTime;
 
-#if defined(GEODE_IS_MACOS)
-        __int64_t deltaTime;
-        __int64_t stepDelta;
+#ifdef GEODE_IS_WINDOWS
+		LARGE_INTEGER deltaTime;
+		LARGE_INTEGER stepDelta;
+		deltaTime.QuadPart = currentFrameTime.QuadPart - lastFrameTime.QuadPart;
+		stepDelta.QuadPart = (deltaTime.QuadPart / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
 
-        deltaTime = currentFrameTime - lastFrameTime;
-        stepDelta = (deltaTime / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
+		for (int i = 0; i < stepCount; i++) {
+			double lastDFactor = 0.0;
+			while (true) {
+				InputEvent front;
+				if (!inputQueueCopy.empty()) {
+					front = inputQueueCopy.front();
+					if (front.time.QuadPart - lastFrameTime.QuadPart < stepDelta.QuadPart * (i + 1)) {
+						double dFactor = static_cast<double>((front.time.QuadPart - lastFrameTime.QuadPart) % stepDelta.QuadPart) / stepDelta.QuadPart;
+						stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, smallestFloat, 1.0), false });
+						lastDFactor = dFactor;
+						inputQueueCopy.pop();
+						continue;
+					}
+				}
+				front = nextInput;
+				stepQueue.emplace(Step{ front, std::max(smallestFloat, 1.0 - lastDFactor), true });
+				break;
+			}
+		}
+#elif defined(GEODE_IS_MACOS)
+		__int64_t deltaTime;
+		__int64_t stepDelta;
+		deltaTime = currentFrameTime - lastFrameTime;
+		stepDelta = (deltaTime / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
 
-        for (int i = 0; i < stepCount; i++) {
-            double lastDFactor = 0.0;
-            while (true) {
-                InputEvent front;
-                if (!inputQueueCopy.empty()) {
-                    front = inputQueueCopy.front();
-                    if (front.time - lastFrameTime < stepDelta * (i + 1)) {
-                        double dFactor = static_cast<double>((front.time - lastFrameTime) % stepDelta) / stepDelta;
-                        stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, smallestFloat, 1.0), false });
-                        lastDFactor = dFactor;
-                        inputQueueCopy.pop();
-                        continue;
-                    }
-                }
-                front = nextInput;
-                stepQueue.emplace(Step{ front, std::max(smallestFloat, 1.0 - lastDFactor), true });
-                break;
-            }
-        }
-#elif defined(GEODE_IS_WINDOWS)
-        LARGE_INTEGER deltaTime;
-        LARGE_INTEGER stepDelta;
-        
-        deltaTime.QuadPart = currentFrameTime.QuadPart - lastFrameTime.QuadPart;
-        stepDelta.QuadPart = (deltaTime.QuadPart / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
-
-        for (int i = 0; i < stepCount; i++) {
-            double lastDFactor = 0.0;
-            while (true) {
-                InputEvent front;
-                if (!inputQueueCopy.empty()) {
-                    front = inputQueueCopy.front();
-                    if (front.time.QuadPart - lastFrameTime.QuadPart < stepDelta.QuadPart * (i + 1)) {
-                        double dFactor = static_cast<double>((front.time.QuadPart - lastFrameTime.QuadPart) % stepDelta.QuadPart) / stepDelta.QuadPart;
-                        stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, smallestFloat, 1.0), false });
-                        lastDFactor = dFactor;
-                        inputQueueCopy.pop();
-                        continue;
-                    }
-                }
-                front = nextInput;
-                stepQueue.emplace(Step{ front, std::max(smallestFloat, 1.0 - lastDFactor), true });
-                break;
-            }
-        }
+		for (int i = 0; i < stepCount; i++) {
+			double lastDFactor = 0.0;
+			while (true) {
+				InputEvent front;
+				if (!inputQueueCopy.empty()) {
+					front = inputQueueCopy.front();
+					if (front.time - lastFrameTime < stepDelta * (i + 1)) {
+						double dFactor = static_cast<double>((front.time - lastFrameTime) % stepDelta) / stepDelta;
+						stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, smallestFloat, 1.0), false });
+						lastDFactor = dFactor;
+						inputQueueCopy.pop();
+						continue;
+					}
+				}
+				front = nextInput;
+				stepQueue.emplace(Step{ front, std::max(smallestFloat, 1.0 - lastDFactor), true });
+				break;
+			}
+		}
 #endif
-    }
+	}
 }
 
 Step updateDeltaFactorAndInput()
@@ -186,6 +179,7 @@ Step updateDeltaFactorAndInput()
     return front;
 }
 
+#ifdef GEODE_IS_MACOS
 float newGetModifiedDelta(GJBaseGameLayer *p0, float p1) // inlined LOL
 {
     /*
@@ -254,6 +248,7 @@ float newGetModifiedDelta(GJBaseGameLayer *p0, float p1) // inlined LOL
 
 	return v10;
 }
+#endif
 
 void updateKeybinds()
 {
@@ -295,11 +290,24 @@ class $modify(PlayLayer)
     }
 };
 
+class $modify(GJBaseGameLayer)
+{
+    void update(float p0)
+    {
+        GJBaseGameLayer::update(p0);
+        newGetModifiedDelta(this, p0);
+    }
+};
+
 bool softToggle; // cant just disable all hooks bc thatll cause a memory leak with inputQueue, may improve this in the future
 
 class $modify(CCDirector)
 {
-	void setDeltaTime(float dTime)
+#ifdef GEODE_IS_MACOS
+	void drawScene()
+#elif defined(GEODE_IS_WINDOWS)
+    void setDeltaTime(float dTime)
+#endif
     {
 		PlayLayer* playLayer = PlayLayer::get();
 		CCNode* par;
@@ -325,7 +333,11 @@ class $modify(CCDirector)
             }
         }
 
+#ifdef GEODE_IS_MACOS
+        CCDirector::drawScene();
+#elif defined(GEODE_IS_WINDOWS)
         CCDirector::setDeltaTime(dTime);
+#endif
     }
 };
 
@@ -334,20 +346,34 @@ class $modify(GJBaseGameLayer)
     static void onModify(auto &self)
     {
         self.setHookPriority("GJBaseGameLayer::handleButton", INT_MIN);
+#if defined(GEODE_IS_WINDOWS)
         self.setHookPriority("GJBaseGameLayer::getModifiedDelta", INT_MIN);
+#endif
     }
 
     void handleButton(bool down, int button, bool isPlayer1)
     {
         if (enableInput)
-        GJBaseGameLayer::handleButton(down, button, isPlayer1);
+            GJBaseGameLayer::handleButton(down, button, isPlayer1);
     }
 
-    void update(float p0)
+    float getModifiedDelta(float delta)
     {
-	    GJBaseGameLayer::update(p0);
-	    newGetModifiedDelta(this, p0);
-    }
+		float modifiedDelta = GJBaseGameLayer::getModifiedDelta(delta);
+
+		PlayLayer* pl = PlayLayer::get();
+		if (pl) {
+			const float timewarp = pl->m_gameState.m_timeWarp;
+			if (actualDelta) modifiedDelta = CCDirector::sharedDirector()->getActualDeltaTime() * timewarp;
+			
+			const int stepCount = std::round(std::max(1.0, ((modifiedDelta * 60.0) / std::min(1.0f, timewarp)) * 4)); // not sure if this is different from (delta * 240) / timewarp
+
+			if (modifiedDelta > 0.0) updateInputQueueAndTime(stepCount);
+			else skipUpdate = true;
+		}
+		
+		return modifiedDelta;
+	}
 };
 
 CCPoint p1Pos = { 0.0, 0.0 };
@@ -358,78 +384,79 @@ bool midStep = false;
 
 class $modify(PlayerObject)
 {
-    void update(float timeFactor)
+	void update(float timeFactor)
     {
-        PlayLayer *pl = PlayLayer::get();
 
-        if (skipUpdate || !pl || !(this == pl->m_player1 || this == pl->m_player2)) {
-            PlayerObject::update(timeFactor);
-            return;
-        }
+		PlayLayer* pl = PlayLayer::get();
 
-        PlayerObject *p2 = pl->m_player2;
-        if (this == p2)
-            return;
+		if (skipUpdate 
+			|| !pl 
+			|| !(this == pl->m_player1 || this == pl->m_player2))
+		{
+			PlayerObject::update(timeFactor);
+			return;
+		}
 
-        bool isDual = pl->m_gameState.m_isDualMode;
+		PlayerObject* p2 = pl->m_player2;
+		if (this == p2) return;
 
-        bool p1StartedOnGround = this->m_isOnGround;
-        bool p2StartedOnGround = p2->m_isOnGround;
+		bool isDual = pl->m_gameState.m_isDualMode;
 
-        bool p1NotBuffering = p1StartedOnGround || this->m_touchingRings->count() || (this->m_isDart || this->m_isBird || this->m_isShip || this->m_isSwing);
+		bool p1StartedOnGround = this->m_isOnGround;
+		bool p2StartedOnGround = p2->m_isOnGround;
 
-        bool p2NotBuffering = p2StartedOnGround || p2->m_touchingRings->count() || (p2->m_isDart || p2->m_isBird || p2->m_isShip || p2->m_isSwing);
+		bool p1NotBuffering = p1StartedOnGround
+			|| this->m_touchingRings->count()
+			|| (this->m_isDart || this->m_isBird || this->m_isShip || this->m_isSwing);
 
-        p1Pos = PlayerObject::getPosition();
-        p2Pos = p2->getPosition();
+		bool p2NotBuffering = p2StartedOnGround
+			|| p2->m_touchingRings->count()
+			|| (p2->m_isDart || p2->m_isBird || p2->m_isShip || p2->m_isSwing);
 
-        Step step;
-        bool firstLoop = true;
-        midStep        = true;
+		p1Pos = PlayerObject::getPosition();
+		p2Pos = p2->getPosition();
 
-        do {
-            step = updateDeltaFactorAndInput();
+		Step step;
+		bool firstLoop = true;
+		midStep = true;
 
-            const float newTimeFactor = timeFactor * step.deltaFactor;
-            rotationDelta             = newTimeFactor;
+		do {
+			step = updateDeltaFactorAndInput();
 
-            if (p1NotBuffering) {
-                PlayerObject::update(newTimeFactor);
-                if (!step.endStep) {
-                    if (firstLoop && (this->m_yVelocity < (0 ^ this->m_isUpsideDown)))
-                        this->m_isOnGround = p1StartedOnGround; // this fixes delayed inputs on platforms moving down for some reason
-                    if (!this->m_isOnSlope || this->m_isDart)
-                        pl->checkCollisions(this, 0.0f, true);
-                    PlayerObject::updateRotation(newTimeFactor);
-                    this->newResetCollisionLog(this);
-                }
-            }
-            else if (step.endStep) { // disable cbf for buffers, revert to click-on-steps mode
-                PlayerObject::update(timeFactor);
-            }
+			const float newTimeFactor = timeFactor * step.deltaFactor;
+			rotationDelta = newTimeFactor;
 
-            if (isDual) {
-                if (p2NotBuffering) {
-                    p2->update(newTimeFactor);
-                    if (!step.endStep) {
-                        if (firstLoop && (p2->m_yVelocity < (0 ^ p2->m_isUpsideDown)))
-                            p2->m_isOnGround = p2StartedOnGround;
-                        if (!p2->m_isOnSlope || p2->m_isDart)
-                            pl->checkCollisions(p2, 0.0f, true);
-                        p2->updateRotation(newTimeFactor);
-                        newResetCollisionLog(p2);
-                    }
-                }
-                else if (step.endStep) {
-                    p2->update(timeFactor);
-                }
-            }
+			if (p1NotBuffering) {
+				PlayerObject::update(newTimeFactor);
+				if (!step.endStep) {
+					if (firstLoop && (this->m_yVelocity < (0 ^ this->m_isUpsideDown))) this->m_isOnGround = p1StartedOnGround; // this fixes delayed inputs on platforms moving down for some reason
+					if (!this->m_isOnSlope || this->m_isDart) pl->checkCollisions(this, 0.0f, true);
+					PlayerObject::updateRotation(newTimeFactor);
+				}
+			}
+			else if (step.endStep) { // disable cbf for buffers, revert to click-on-steps mode 
+				PlayerObject::update(timeFactor);
+			}
 
-            firstLoop = false;
-        } while (!step.endStep);
+			if (isDual) {
+				if (p2NotBuffering) {
+					p2->update(newTimeFactor);
+					if (!step.endStep) {
+						if (firstLoop && (p2->m_yVelocity < (0 ^ p2->m_isUpsideDown))) p2->m_isOnGround = p2StartedOnGround;
+						if (!p2->m_isOnSlope || p2->m_isDart) pl->checkCollisions(p2, 0.0f, true);
+						p2->updateRotation(newTimeFactor);
+					}
+				}
+				else if (step.endStep) {
+					p2->update(timeFactor);
+				}
+			}
 
-        midStep = false;
-    }
+			firstLoop = false;
+		} while (!step.endStep);
+
+		midStep = false;
+	}
 
     void updateRotation(float t)
     {
@@ -454,8 +481,8 @@ class $modify(PlayerObject)
             PlayerObject::updateRotation(t);
     }
 
-    void newResetCollisionLog(PlayerObject *p)
-    { // inlined in 2.206...
+    void newResetCollisionLog(PlayerObject *p) // inlined in 2.206...
+    {
         p->m_collisionLogTop->removeAllObjects();
         p->m_collisionLogBottom->removeAllObjects();
         p->m_collisionLogLeft->removeAllObjects();
@@ -466,15 +493,6 @@ class $modify(PlayerObject)
         p->m_lastCollisionRight  = -1;
         p->m_unk50C              = -1;
     }
-};
-
-class $modify(LevelEditorLayer)
-{
-	void updateEditor(float p0)
-	{
-		LevelEditorLayer::updateEditor(p0);
-		newGetModifiedDelta(GJBaseGameLayer::get(), p0);
-	}
 };
 
 class $modify(GJGameLevel)
@@ -519,8 +537,8 @@ class $modify(EndLevelLayer)
     }
 };
 
-Patch *patch;
 #ifdef GEODE_IS_WINDOWS
+Patch *patch;
 void toggleMod(bool disable)
 {
     void* addr = reinterpret_cast<void*>(geode::base::get() + 0x5ec8e8);

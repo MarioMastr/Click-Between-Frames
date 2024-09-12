@@ -203,15 +203,13 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
     PlayerButton inputType;
     bool inputState;
     bool player;
-    __int64_t time;
+    uint64_t time;
     std::array<std::unordered_set<size_t>, 6> binds;
     std::lock_guard lock(keybindsLock);
     std::lock_guard lock2(inputQueueLock);
     binds = inputBinds;
     bool shouldEmplace = true;
     int windows;
-    mach_timebase_info_data_t info;
-	mach_timebase_info(&info);
 
     if (PlayLayer::get() || LevelEditorLayer::get()) {
         type = [event type];
@@ -223,8 +221,6 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     inputState = State::Press;
                     player     = Player1;
                     time       = mach_absolute_time();
-                    time *= info.numer;
-				    time /= info.denom;
 
                     if (heldInputs.contains(windows)) {
 				        if (!inputState) return;
@@ -265,8 +261,11 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     inputState = State::Release;
                     player     = Player1;
                     time       = mach_absolute_time();
-                    time *= info.numer;
-				    time /= info.denom;
+
+                    if (heldInputs.contains(windows)) {
+				        if (!inputState) return;
+				        else heldInputs.erase(windows);
+			        }
 
                     windows = convertKeyCodes([event keyCode]);
                     if (binds[p1Jump].contains(windows))
@@ -299,8 +298,6 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                 case NSEventTypeLeftMouseDown:
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseDown:) with:event];
                     time       = mach_absolute_time();
-                    time *= info.numer;
-				    time /= info.denom;
                     
                     inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Press, Player1 });
 
@@ -312,10 +309,8 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
         if (type == NSEventTypeLeftMouseUp) {
             switch (type) {
                 case NSEventTypeLeftMouseDown:
-                    [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseDown:) with:event];
+                    [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseUp:) with:event];
                     time       = mach_absolute_time();
-                    time *= info.numer;
-				    time /= info.denom;
 
                     inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Release, Player1 });
 
@@ -327,10 +322,8 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
         if (type == NSEventTypeRightMouseDown) {
             switch (type) {
                 case NSEventTypeRightMouseDown:
-                    [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseDown:) with:event];
-                    time       = mach_absolute_time();
-                    time *= info.numer;
-				    time /= info.denom;
+                    [[[self mainWindow] firstResponder] tryToPerform:@selector(rightMouseDown:) with:event];
+                    time       = mach_absolute_time() ;
 
                     if (!enableRightClick.load())
                         inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Press, Player2 });
@@ -343,10 +336,8 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
         if (type == NSEventTypeRightMouseUp) {
             switch (type) {
                 case NSEventTypeRightMouseUp:
-                    [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseDown:) with:event];
+                    [[[self mainWindow] firstResponder] tryToPerform:@selector(rightMouseUp:) with:event];
                     time       = mach_absolute_time();
-                    time *= info.numer;
-				    time /= info.denom;
 
                     if (!enableRightClick.load())
                         inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Release, Player2 });
