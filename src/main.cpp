@@ -188,7 +188,7 @@ Step updateDeltaFactorAndInput()
 }
 
 #ifdef GEODE_IS_MACOS
-float newGetModifiedDelta(GJBaseGameLayer *p0, float p1) // inlined LOL
+float newGetModifiedDelta(GJBaseGameLayer *p0, float p1) // inlined in GJBGL::update on mac... for some reason
 {
     /*
     float modifiedDelta = GJBaseGameLayer::getModifiedDelta(delta);
