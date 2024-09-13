@@ -193,6 +193,8 @@ int convertKeyCodes(int code)
         return 39;
     else if (code == 125)
         return 40;
+    else if (code == 126)
+        return 283;
     else
         return 0;
 }
