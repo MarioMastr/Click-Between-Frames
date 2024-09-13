@@ -223,13 +223,13 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     inputState = State::Press;
                     player     = Player1;
                     time       = mach_absolute_time();
+                    windows = convertKeyCodes([event keyCode]);
 
                     if (heldInputs.contains(windows)) {
 				        if (!inputState) return;
 				        else heldInputs.erase(windows);
 			        }
 
-                    windows = convertKeyCodes([event keyCode]);
                     if (binds[p1Jump].contains(windows))
                         inputType = PlayerButton::Jump;
                     else if (binds[p1Left].contains(windows))
@@ -263,13 +263,13 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     inputState = State::Release;
                     player     = Player1;
                     time       = mach_absolute_time();
+                    windows = convertKeyCodes([event keyCode]);
 
                     if (heldInputs.contains(windows)) {
 				        if (!inputState) return;
 				        else heldInputs.erase(windows);
 			        }
 
-                    windows = convertKeyCodes([event keyCode]);
                     if (binds[p1Jump].contains(windows))
                         inputType = PlayerButton::Jump;
                     else if (binds[p1Left].contains(windows))
