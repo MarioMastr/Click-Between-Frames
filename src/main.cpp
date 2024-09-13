@@ -40,9 +40,9 @@ InputEvent nextInput = { 0, 0, PlayerButton::Jump, 0 };
 #endif
 
 #ifdef GEODE_IS_MACOS
-__int64_t lastFrameTime;
-__int64_t lastPhysicsFrameTime;
-__int64_t currentFrameTime;
+uint64_t lastFrameTime;
+uint64_t lastPhysicsFrameTime;
+uint64_t currentFrameTime;
 #elif defined (GEODE_IS_WINDOWS)
 LARGE_INTEGER lastFrameTime;
 LARGE_INTEGER lastPhysicsFrameTime;
@@ -96,6 +96,14 @@ void updateInputQueueAndTime(int stepCount)
 		}
 
 		lastPhysicsFrameTime = currentFrameTime;
+
+        if (!firstFrame) skipUpdate = false;
+		else {
+			skipUpdate = true;
+			firstFrame = false;
+			if (!lateCutoff) inputQueueCopy = {};
+			return;
+		}
 
 #ifdef GEODE_IS_WINDOWS
 		LARGE_INTEGER deltaTime;
@@ -378,8 +386,8 @@ class $modify(GJBaseGameLayer)
 	}
 };
 
-CCPoint p1Pos = { 0.0, 0.0 };
-CCPoint p2Pos = { 0.0, 0.0 };
+CCPoint p1Pos = { NULL, NULL };
+CCPoint p2Pos = { NULL, NULL };
 
 float rotationDelta;
 bool midStep = false;
