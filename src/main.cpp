@@ -54,6 +54,8 @@ bool skipUpdate  = true;
 bool enableInput = false;
 bool lateCutoff;
 
+bool softToggle;
+
 void updateInputQueueAndTime(int stepCount)
 {
 	PlayLayer* playLayer = PlayLayer::get();
@@ -98,12 +100,12 @@ void updateInputQueueAndTime(int stepCount)
 		lastPhysicsFrameTime = currentFrameTime;
 
         if (!firstFrame) skipUpdate = false;
-		else {
-			skipUpdate = true;
+        else {
+            skipUpdate = true;
 			firstFrame = false;
 			if (!lateCutoff) inputQueueCopy = {};
 			return;
-		}
+        }
 
 #ifdef GEODE_IS_WINDOWS
 		LARGE_INTEGER deltaTime;
@@ -131,8 +133,8 @@ void updateInputQueueAndTime(int stepCount)
 			}
 		}
 #elif defined(GEODE_IS_MACOS)
-		__int64_t deltaTime;
-		__int64_t stepDelta;
+		uint64_t deltaTime;
+		uint64_t stepDelta;
 		deltaTime = currentFrameTime - lastFrameTime;
 		stepDelta = (deltaTime / stepCount) + 1; // the +1 is to prevent dropped inputs caused by integer division
 
@@ -190,23 +192,6 @@ Step updateDeltaFactorAndInput()
 #ifdef GEODE_IS_MACOS
 float newGetModifiedDelta(GJBaseGameLayer *p0, float p1) // inlined in GJBGL::update on mac... for some reason
 {
-    /*
-    float modifiedDelta = GJBaseGameLayer::getModifiedDelta(delta);
-
-    PlayLayer* pl = PlayLayer::get();
-    if (pl) {
-        const float timewarp = pl->m_gameState.m_timeWarp;
-        if (actualDelta) modifiedDelta = CCDirector::sharedDirector()->getActualDeltaTime() * timewarp;
-
-        const int stepCount = std::round(std::max(1.0, ((modifiedDelta * 60.0) / std::min(1.0f, timewarp)) * 4)); // not sure if this is different from (delta * 240) / timewarp
-                  
-        if (modifiedDelta > 0.0) updateInputQueueAndTime(stepCount);
-        else skipUpdate = true;
-    }
-                  
-    return modifiedDelta;
-    */
-    
     int v8;           // w8
     double v9;        // d13
     double v10;       // d9
@@ -234,7 +219,7 @@ float newGetModifiedDelta(GJBaseGameLayer *p0, float p1) // inlined in GJBGL::up
     v14             = v13;
     v15             = v14 / v12;
     v16             = v12 * (double)(int)llroundf(v15);
-    p0->m_unk3248 = v14 - v16;
+    p0->m_unk3248   = v14 - v16;
     p1              = v16;
     v9              = p1;
     v10             = (float)(p1 / m_timeWarp);
@@ -293,6 +278,9 @@ class $modify(PlayLayer)
 {
     bool init(GJGameLevel * level, bool useReplay, bool dontCreateObjects)
     {
+        if (softToggle)
+            return PlayLayer::init(level, useReplay, dontCreateObjects);
+
         updateKeybinds();
         return PlayLayer::init(level, useReplay, dontCreateObjects);
     }
@@ -303,13 +291,14 @@ class $modify(GJBaseGameLayer)
 {
     void update(float p0)
     {
-        GJBaseGameLayer::update(p0);
+        if (softToggle)
+            return GJBaseGameLayer::update(p0);
+
         newGetModifiedDelta(this, p0);
+        GJBaseGameLayer::update(p0);
     }
 };
 #endif
-
-bool softToggle; // cant just disable all hooks bc thatll cause a memory leak with inputQueue, may improve this in the future
 
 class $modify(CCDirector)
 {
@@ -319,6 +308,13 @@ class $modify(CCDirector)
     void setDeltaTime(float dTime)
 #endif
     {
+        if (softToggle)
+#ifdef GEODE_IS_MACOS
+            return CCDirector::drawScene();
+#elif defined(GEODE_IS_WINDOWS)
+            return CCDirector::setDeltaTime(dTime);
+#endif 
+
 		PlayLayer* playLayer = PlayLayer::get();
 		CCNode* par;
 
@@ -369,6 +365,9 @@ class $modify(GJBaseGameLayer)
 
     float getModifiedDelta(float delta)
     {
+        if (softToggle)
+            return GJBaseGameLayer::getModifiedDelta(delta);
+
 		float modifiedDelta = GJBaseGameLayer::getModifiedDelta(delta);
 
 		PlayLayer* pl = PlayLayer::get();
@@ -386,8 +385,8 @@ class $modify(GJBaseGameLayer)
 	}
 };
 
-CCPoint p1Pos = { NULL, NULL };
-CCPoint p2Pos = { NULL, NULL };
+CCPoint p1Pos = { 0.0, 0.0 };
+CCPoint p2Pos = { 0.0, 0.0 };
 
 float rotationDelta;
 bool midStep = false;
@@ -396,12 +395,12 @@ class $modify(PlayerObject)
 {
 	void update(float timeFactor)
     {
-
 		PlayLayer* pl = PlayLayer::get();
 
 		if (skipUpdate 
 			|| !pl 
-			|| !(this == pl->m_player1 || this == pl->m_player2))
+			|| !(this == pl->m_player1 || this == pl->m_player2)
+            || softToggle)
 		{
 			PlayerObject::update(timeFactor);
 			return;
@@ -470,6 +469,9 @@ class $modify(PlayerObject)
 
     void updateRotation(float t)
     {
+        if (softToggle)
+            return PlayerObject::updateRotation(t);
+
         PlayLayer *pl = PlayLayer::get();
         if (!skipUpdate && pl && this == pl->m_player1) {
             PlayerObject::updateRotation(rotationDelta);
@@ -575,6 +577,9 @@ $on_mod(Loaded)
 
     actualDelta = Mod::get()->getSettingValue<bool>("actual-delta");
     listenForSettingChanges("actual-delta", +[](bool enable) { actualDelta = enable; });
+
+    softToggle = Mod::get()->getSettingValue<bool>("soft-toggle");
+    listenForSettingChanges("soft-toggle", +[](bool enable) { softToggle = enable; });
 
 #ifdef GEODE_IS_WINDOWS
     toggleMod(Mod::get()->getSettingValue<bool>("soft-toggle"));

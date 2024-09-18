@@ -25,7 +25,9 @@ static IMP s_originalSendEventIMP;
 int convertKeyCodes(int code)
 {
 
-    if (code == 1)
+    if (code == 0)
+        return 65;
+    else if (code == 1)
         return 83;
     else if (code == 2)
         return 68;
@@ -199,6 +201,217 @@ int convertKeyCodes(int code)
         return 0;
 }
 
+@interface EAGLView : NSOpenGLView
+@end
+
+#ifdef GEODE_IS_MACOS
+static IMP keyDownExecOIMP;
+void keyDownExec(EAGLView *self, SEL sel, NSEvent *event)
+{
+    if (PlayLayer::get() || LevelEditorLayer::get()) {
+        uint64_t timestamp = mach_absolute_time();
+        std::array<std::unordered_set<size_t>, 6> binds;
+        std::lock_guard lock(keybindsLock);
+        binds              = inputBinds;
+        bool shouldEmplace = true;
+        State inputState = State::Press;
+        Player player     = Player1;
+        PlayerButton inputType;
+        int windows    = convertKeyCodes([event keyCode]);
+
+        if (heldInputs.contains(windows)) {
+            if (!inputState)
+                return;
+            else
+                heldInputs.erase(windows);
+        }
+
+        if (binds[p1Jump].contains(windows))
+            inputType = PlayerButton::Jump;
+        else if (binds[p1Left].contains(windows))
+            inputType = PlayerButton::Left;
+        else if (binds[p1Right].contains(windows))
+            inputType = PlayerButton::Right;
+        else {
+            player = Player2;
+            if (binds[p2Jump].contains(windows))
+                inputType = PlayerButton::Jump;
+            else if (binds[p2Left].contains(windows))
+                inputType = PlayerButton::Left;
+            else if (binds[p2Right].contains(windows))
+                inputType = PlayerButton::Right;
+        }
+
+        if (!inputState)
+            heldInputs.emplace(windows);
+        if (!shouldEmplace)
+            return;
+
+        std::lock_guard lock2(inputQueueLock);
+        inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
+    }
+
+    reinterpret_cast<decltype(&keyDownExec)>(keyDownExecOIMP)(self, sel, event);
+}
+
+static IMP keyUpExecOIMP;
+void keyUpExec(EAGLView *self, SEL sel, NSEvent *event)
+{
+    if (PlayLayer::get() || LevelEditorLayer::get()) {
+        uint64_t timestamp = mach_absolute_time();
+        std::array<std::unordered_set<size_t>, 6> binds;
+        std::lock_guard lock(keybindsLock);
+        binds              = inputBinds;
+        bool shouldEmplace = true;
+        State inputState = State::Release;
+        Player player     = Player1;
+        PlayerButton inputType;
+        int windows    = convertKeyCodes([event keyCode]);
+
+        if (heldInputs.contains(windows)) {
+            if (!inputState)
+                return;
+            else
+                heldInputs.erase(windows);
+        }
+
+        if (binds[p1Jump].contains(windows))
+            inputType = PlayerButton::Jump;
+        else if (binds[p1Left].contains(windows))
+            inputType = PlayerButton::Left;
+        else if (binds[p1Right].contains(windows))
+            inputType = PlayerButton::Right;
+        else {
+            player = Player2;
+            if (binds[p2Jump].contains(windows))
+                inputType = PlayerButton::Jump;
+            else if (binds[p2Left].contains(windows))
+                inputType = PlayerButton::Left;
+            else if (binds[p2Right].contains(windows))
+                inputType = PlayerButton::Right;
+        }
+
+        if (!inputState)
+            heldInputs.emplace(windows);
+        if (!shouldEmplace)
+            return;
+
+        std::lock_guard lock2(inputQueueLock);
+        inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
+    }
+
+    reinterpret_cast<decltype(&keyUpExec)>(keyUpExecOIMP)(self, sel, event);
+}
+
+static IMP mouseDownExecOIMP;
+void mouseDownExec(EAGLView *self, SEL sel, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+
+    reinterpret_cast<decltype(&mouseDownExec)>(mouseDownExecOIMP)(self, sel, event);
+}
+
+static IMP mouseDraggedExecOIMP;
+void mouseDraggedExec(EAGLView *self, SEL sel, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+
+    reinterpret_cast<decltype(&mouseDraggedExec)>(mouseDraggedExecOIMP)(self, sel, event);
+}
+
+static IMP mouseUpExecOIMP;
+void mouseUpExec(EAGLView *self, SEL sel, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+
+    reinterpret_cast<decltype(&mouseUpExec)>(mouseUpExecOIMP)(self, sel, event);
+}
+#endif
+
+#ifdef GEODE_IS_IOS
+static IMP touchesBeganOIMP;
+void touchesBegan(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
+
+    reinterpret_cast<decltype(&touchesBegan)>(touchesBeganOIMP)(self, sel, touches, event);
+}
+
+static IMP touchesMovedOIMP;
+void touchesMoved(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
+
+    reinterpret_cast<decltype(&touchesMoved)>(touchesMovedOIMP)(self, sel, touches, event);
+}
+
+static IMP touchesEndedOIMP;
+void touchesEnded(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
+
+    reinterpret_cast<decltype(&touchesEnded)>(touchesEndedOIMP)(self, sel, touches, event);
+}
+
+static IMP touchesCancelledOIMP;
+void touchesCancelled(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
+{
+    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
+
+    reinterpret_cast<decltype(&touchesCancelled)>(touchesCancelledOIMP)(self, sel, touches, event);
+}
+#endif
+
+$execute
+{
+    auto eaglView = objc_getClass("EAGLView");
+
+#ifdef GEODE_IS_MACOS
+    auto keyDownExecMethod = class_getInstanceMethod(eaglView, @selector(keyDownExec:));
+    keyDownExecOIMP        = method_getImplementation(keyDownExecMethod);
+    method_setImplementation(keyDownExecMethod, (IMP)&keyDownExec);
+
+    auto keyUpExecMethod = class_getInstanceMethod(eaglView, @selector(keyUpExec:));
+    keyUpExecOIMP        = method_getImplementation(keyUpExecMethod);
+    method_setImplementation(keyUpExecMethod, (IMP)&keyUpExec);
+
+    auto mouseDownExecMethod = class_getInstanceMethod(eaglView, @selector(mouseDownExec:));
+    mouseDownExecOIMP        = method_getImplementation(mouseDownExecMethod);
+    method_setImplementation(mouseDownExecMethod, (IMP)&mouseDownExec);
+
+    auto mouseDraggedExecMethod = class_getInstanceMethod(eaglView, @selector(mouseDraggedExec:));
+    mouseDraggedExecOIMP        = method_getImplementation(mouseDraggedExecMethod);
+    method_setImplementation(mouseDraggedExecMethod, (IMP)&mouseDraggedExec);
+
+    auto mouseUpExecMethod = class_getInstanceMethod(eaglView, @selector(mouseUpExec:));
+    mouseUpExecOIMP        = method_getImplementation(mouseUpExecMethod);
+    method_setImplementation(mouseUpExecMethod, (IMP)&mouseUpExec);
+#endif
+
+#ifdef GEODE_IS_IOS
+    auto touchesBeganMethod = class_getInstanceMethod(eaglView, @selector(touchesBegan:withEvent:));
+    touchesBeganOIMP        = method_getImplementation(touchesBeganMethod);
+    method_setImplementation(touchesBeganMethod, (IMP)&touchesBegan);
+
+    auto touchesMovedMethod = class_getInstanceMethod(eaglView, @selector(touchesMoved:withEvent:));
+    touchesMovedOIMP        = method_getImplementation(touchesMovedMethod);
+    method_setImplementation(touchesMovedMethod, (IMP)&touchesMoved);
+
+    auto touchesEndedMethod = class_getInstanceMethod(eaglView, @selector(touchesEnded:withEvent:));
+    touchesEndedOIMP        = method_getImplementation(touchesEndedMethod);
+    method_setImplementation(touchesEndedMethod, (IMP)&touchesEnded);
+
+    auto touchesCancelledMethod = class_getInstanceMethod(eaglView, @selector(touchesCancelled:withEvent:));
+    touchesCancelledOIMP        = method_getImplementation(touchesCancelledMethod);
+    method_setImplementation(touchesCancelledMethod, (IMP)&touchesCancelled);
+#endif
+}
+
+/*
 void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
 {
     NSEventType type;
@@ -209,7 +422,7 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
     std::array<std::unordered_set<size_t>, 6> binds;
     std::lock_guard lock(keybindsLock);
     std::lock_guard lock2(inputQueueLock);
-    binds = inputBinds;
+    binds              = inputBinds;
     bool shouldEmplace = true;
     int windows;
 
@@ -223,12 +436,14 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     inputState = State::Press;
                     player     = Player1;
                     time       = mach_absolute_time();
-                    windows = convertKeyCodes([event keyCode]);
+                    windows    = convertKeyCodes([event keyCode]);
 
                     if (heldInputs.contains(windows)) {
-				        if (!inputState) return;
-				        else heldInputs.erase(windows);
-			        }
+                        if (!inputState)
+                            return;
+                        else
+                            heldInputs.erase(windows);
+                    }
 
                     if (binds[p1Jump].contains(windows))
                         inputType = PlayerButton::Jump;
@@ -246,8 +461,10 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                             inputType = PlayerButton::Right;
                     }
 
-                    if (!inputState) heldInputs.emplace(windows);
-                    if (!shouldEmplace) return;
+                    if (!inputState)
+                        heldInputs.emplace(windows);
+                    if (!shouldEmplace)
+                        return;
                     inputQueue.emplace(InputEvent{ time, inputType, inputState, player });
 
                     return;
@@ -263,12 +480,14 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     inputState = State::Release;
                     player     = Player1;
                     time       = mach_absolute_time();
-                    windows = convertKeyCodes([event keyCode]);
+                    windows    = convertKeyCodes([event keyCode]);
 
                     if (heldInputs.contains(windows)) {
-				        if (!inputState) return;
-				        else heldInputs.erase(windows);
-			        }
+                        if (!inputState)
+                            return;
+                        else
+                            heldInputs.erase(windows);
+                    }
 
                     if (binds[p1Jump].contains(windows))
                         inputType = PlayerButton::Jump;
@@ -285,9 +504,11 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                         else if (binds[p2Right].contains(windows))
                             inputType = PlayerButton::Right;
                     }
- 
-                    if (!inputState) heldInputs.emplace(windows);
-                    if (!shouldEmplace) return;
+
+                    if (!inputState)
+                        heldInputs.emplace(windows);
+                    if (!shouldEmplace)
+                        return;
                     inputQueue.emplace(InputEvent{ time, inputType, inputState, player });
 
                     return;
@@ -299,8 +520,8 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
             switch (type) {
                 case NSEventTypeLeftMouseDown:
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseDown:) with:event];
-                    time       = mach_absolute_time();
-                    
+                    time = mach_absolute_time();
+
                     inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Press, Player1 });
 
                     return;
@@ -312,7 +533,7 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
             switch (type) {
                 case NSEventTypeLeftMouseDown:
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(mouseUp:) with:event];
-                    time       = mach_absolute_time();
+                    time = mach_absolute_time();
 
                     inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Release, Player1 });
 
@@ -325,7 +546,7 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
             switch (type) {
                 case NSEventTypeRightMouseDown:
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(rightMouseDown:) with:event];
-                    time       = mach_absolute_time() ;
+                    time = mach_absolute_time();
 
                     if (!enableRightClick.load())
                         inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Press, Player2 });
@@ -339,7 +560,7 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
             switch (type) {
                 case NSEventTypeRightMouseUp:
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(rightMouseUp:) with:event];
-                    time       = mach_absolute_time();
+                    time = mach_absolute_time();
 
                     if (!enableRightClick.load())
                         inputQueue.emplace(InputEvent{ time, PlayerButton::Jump, State::Release, Player2 });
@@ -355,7 +576,8 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
 
 $execute
 {
-    auto method = class_getInstanceMethod(objc_getClass("NSApplication"), @selector(sendEvent:));
+    auto method            = class_getInstanceMethod(objc_getClass("NSApplication"), @selector(sendEvent:));
     s_originalSendEventIMP = method_getImplementation(method);
     method_setImplementation(method, (IMP)&sendEvent);
 }
+*/

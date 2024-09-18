@@ -55,6 +55,8 @@ extern std::mutex keybindsLock;
 extern std::atomic<bool> enableRightClick;
 extern bool threadPriority;
 
+extern bool softToggle;
+
 #ifdef GEODE_IS_WINDOWS
 void inputThread();
 #endif
