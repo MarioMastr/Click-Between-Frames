@@ -1,6 +1,17 @@
-# v1.1.22
+# v1.2.1
 
+* Fix a bug that could cause input on Linux not to work
+* Update warning about permissions on Linux
+
+# v1.2.0
+
+* Potentially reduce slope bugs
 * Potentially improve performance
+* Fix CBF not working for dash orb releases
+* Fix keyboard input not working on Linux
+* Significantly improve input precision on Linux
+* Disable input when unfocused
+* Don't submit CBF completions on star rated levels to leaderboards
 
 # v1.1.21
 

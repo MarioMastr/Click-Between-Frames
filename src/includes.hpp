@@ -27,6 +27,22 @@ enum State : bool {
 	Release = 1
 };
 
+#ifdef GEODE_IS_WINDOWS
+struct __attribute__((packed)) LinuxInputEvent {
+	LARGE_INTEGER time;
+	USHORT type;
+	USHORT code;
+	int value;
+};
+
+extern HANDLE hSharedMem;
+extern HANDLE hMutex;
+extern LPVOID pBuf;
+constexpr size_t BUFFER_SIZE = 20;
+extern bool isLinux;
+
+#endif
+
 struct InputEvent {
 #ifdef GEODE_IS_MACOS
 	uint64_t time;
@@ -35,7 +51,7 @@ struct InputEvent {
 #endif
 	PlayerButton inputType;
 	bool inputState;
-	bool player;
+	bool isPlayer1;
 };
 
 struct Step {
@@ -58,5 +74,6 @@ extern bool threadPriority;
 extern bool softToggle;
 
 #ifdef GEODE_IS_WINDOWS
+void linuxCheckInputs();
 void inputThread();
 #endif

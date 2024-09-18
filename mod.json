@@ -1,10 +1,10 @@
 {
-	"geode": "3.7.0",
+	"geode": "3.7.1",
 	"gd": {
 		"win": "2.206",
 		"mac": "2.206"
 	},
-	"version": "v1.1.22",
+	"version": "v1.2.1",
 	"id": "syzzi.click_between_frames",
 	"name": "Click Between Frames",
 	"developer": "syzzi",
@@ -55,10 +55,17 @@
 		},
 		"thread-priority": {
 			"name": "Thread Priority",
-			"description": "Whether to automatically set CBF's thread priority to the highest available. \n\nRequires game restart to apply.",
+			"description": "Whether to automatically set CBF's thread priority to the highest available.",
 			"type": "bool",
-			"default": true
+			"default": true,
+			"requires-restart": true
 		}
 	},
-	"repository": "https://github.com/theyareonit/Click-Between-Frames"
+	"repository": "https://github.com/theyareonit/Click-Between-Frames",
+	"resources": {
+		"files": [
+			"resources/linux-input.exe",
+			"resources/linux-input.exe.so"
+		]
+	}
 }

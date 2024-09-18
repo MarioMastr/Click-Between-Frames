@@ -1,6 +1,7 @@
 #include "includes.hpp"
 
 #include <limits>
+#include <algorithm>
 
 #include <Geode/Geode.hpp>
 #include <Geode/loader/SettingEvent.hpp>
@@ -9,6 +10,7 @@
 #include <Geode/modify/CCDirector.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/GJGameLevel.hpp>
+#include <Geode/modify/CreatorLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/EndLevelLayer.hpp>
@@ -19,14 +21,15 @@
 
 #include <geode.custom-keybinds/include/Keybinds.hpp>
 
-constexpr double smallestFloat = std::numeric_limits<float>::min();
+typedef void (*wine_get_host_version)(const char **sysname, const char **release);
+constexpr double SMALLEST_FLOAT = std::numeric_limits<float>::min();
 
 #ifdef GEODE_IS_MACOS
-const InputEvent emptyInput = InputEvent{ 0, PlayerButton::Jump, 0, 0 };
+constexpr InputEvent EMPTY_INPUT = InputEvent{ 0, PlayerButton::Jump, 0, 0 };
 #elif defined(GEODE_IS_WINDOWS)
-const InputEvent emptyInput = InputEvent{ 0, 0, PlayerButton::Jump, 0, 0 };
+constexpr InputEvent EMPTY_INPUT = InputEvent{ 0, 0, PlayerButton::Jump, 0, 0 };
 #endif
-const Step emptyStep        = Step{ emptyInput, 1.0, true };
+constexpr Step EMPTY_STEP = Step{ EMPTY_INPUT, 1.0, true };
 
 bool actualDelta;
 
@@ -49,9 +52,13 @@ LARGE_INTEGER lastPhysicsFrameTime;
 LARGE_INTEGER currentFrameTime;
 #endif
 
-bool firstFrame  = true;
-bool skipUpdate  = true;
+HANDLE hSharedMem = NULL;
+HANDLE hMutex = NULL;
+
+bool firstFrame = true;
+bool skipUpdate = true;
 bool enableInput = false;
+bool isLinux = false;
 bool lateCutoff;
 
 bool softToggle;
@@ -69,11 +76,15 @@ void updateInputQueueAndTime(int stepCount)
 		return;
 	}
 	else {
-		nextInput = emptyInput;
+		nextInput = EMPTY_INPUT;
 		lastFrameTime = lastPhysicsFrameTime;
 		stepQueue = {}; // just in case
 
-		{
+		if (isLinux) {
+			GetSystemTimePreciseAsFileTime((FILETIME*)&currentFrameTime);
+			linuxCheckInputs();
+		}
+		else {
 			std::lock_guard lock(inputQueueLock);
 
 			if (lateCutoff) {
@@ -117,19 +128,20 @@ void updateInputQueueAndTime(int stepCount)
 			double lastDFactor = 0.0;
 			while (true) {
 				InputEvent front;
-				if (!inputQueueCopy.empty()) {
-					front = inputQueueCopy.front();
-					if (front.time.QuadPart - lastFrameTime.QuadPart < stepDelta.QuadPart * (i + 1)) {
-						double dFactor = static_cast<double>((front.time.QuadPart - lastFrameTime.QuadPart) % stepDelta.QuadPart) / stepDelta.QuadPart;
-						stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, smallestFloat, 1.0), false });
-						lastDFactor = dFactor;
-						inputQueueCopy.pop();
-						continue;
-					}
+				bool empty = inputQueueCopy.empty();
+				if (!empty) front = inputQueueCopy.front();
+
+				if (!empty && front.time.QuadPart - lastFrameTime.QuadPart < stepDelta.QuadPart * (i + 1)) {
+					double dFactor = static_cast<double>((front.time.QuadPart - lastFrameTime.QuadPart) % stepDelta.QuadPart) / stepDelta.QuadPart;
+					stepQueue.emplace(Step{ front, std::clamp(dFactor - lastDFactor, SMALLEST_FLOAT, 1.0), false });
+					inputQueueCopy.pop();
+					lastDFactor = dFactor;
+					continue;
 				}
-				front = nextInput;
-				stepQueue.emplace(Step{ front, std::max(smallestFloat, 1.0 - lastDFactor), true });
-				break;
+				else {
+					stepQueue.emplace(Step{ EMPTY_INPUT, std::max(SMALLEST_FLOAT, 1.0 - lastDFactor), true });
+					break;
+				}
 			}
 		}
 #elif defined(GEODE_IS_MACOS)
@@ -165,8 +177,8 @@ Step updateDeltaFactorAndInput()
 {
     enableInput = false;
 
-    if (stepQueue.empty())
-        return emptyStep;
+	if (stepQueue.empty())
+        return EMPTY_STEP;
 
     Step front         = stepQueue.front();
     double deltaFactor = front.deltaFactor;
@@ -178,10 +190,10 @@ Step updateDeltaFactorAndInput()
 #endif
         PlayLayer *playLayer = PlayLayer::get();
 
-        enableInput = true;
-        playLayer->handleButton(!nextInput.inputState, (int)nextInput.inputType, !nextInput.player);
-        enableInput = false;
-    }
+		enableInput = true;
+		playLayer->handleButton(!nextInput.inputState, (int)nextInput.inputType, nextInput.isPlayer1);
+		enableInput = false;
+	}
 
     nextInput = front.input;
     stepQueue.pop();
@@ -326,18 +338,23 @@ class $modify(CCDirector)
 #endif
         }
 
-        if (softToggle || !playLayer || !(par = playLayer->getParent()) || (getChildOfType<PauseLayer>(par, 0) != nullptr)) {
-            firstFrame  = true;
-            skipUpdate  = true;
-            enableInput = true;
+		if (softToggle 
+			|| !GetFocus() // not in foreground
+			|| !playLayer 
+			|| !(par = playLayer->getParent()) 
+			|| (getChildOfType<PauseLayer>(par, 0) != nullptr)) 
+		{
+			firstFrame = true;
+			skipUpdate = true;
+			enableInput = true;
 
             inputQueueCopy = {};
 
-            {
-                std::lock_guard lock(inputQueueLock);
-                inputQueue = {};
-            }
-        }
+			if (!isLinux) {
+				std::lock_guard lock(inputQueueLock);
+				inputQueue = {};
+			}
+		}
 
 #ifdef GEODE_IS_MACOS
         CCDirector::drawScene();
@@ -416,10 +433,12 @@ class $modify(PlayerObject)
 
 		bool p1NotBuffering = p1StartedOnGround
 			|| this->m_touchingRings->count()
+			|| this->m_isDashing
 			|| (this->m_isDart || this->m_isBird || this->m_isShip || this->m_isSwing);
 
 		bool p2NotBuffering = p2StartedOnGround
 			|| p2->m_touchingRings->count()
+			|| p2->m_isDashing
 			|| (p2->m_isDart || p2->m_isBird || p2->m_isShip || p2->m_isSwing);
 
 		p1Pos = PlayerObject::getPosition();
@@ -440,6 +459,7 @@ class $modify(PlayerObject)
 				if (!step.endStep) {
 					if (firstLoop && (this->m_yVelocity < (0 ^ this->m_isUpsideDown))) this->m_isOnGround = p1StartedOnGround; // this fixes delayed inputs on platforms moving down for some reason
 					if (!this->m_isOnSlope || this->m_isDart) pl->checkCollisions(this, 0.0f, true);
+					else pl->checkCollisions(this, 0.25f, true);
 					PlayerObject::updateRotation(newTimeFactor);
 				}
 			}
@@ -453,6 +473,7 @@ class $modify(PlayerObject)
 					if (!step.endStep) {
 						if (firstLoop && (p2->m_yVelocity < (0 ^ p2->m_isUpsideDown))) p2->m_isOnGround = p2StartedOnGround;
 						if (!p2->m_isOnSlope || p2->m_isDart) pl->checkCollisions(p2, 0.0f, true);
+						else pl->checkCollisions(p2, 0.25f, true);
 						p2->updateRotation(newTimeFactor);
 					}
 				}
@@ -507,46 +528,71 @@ class $modify(PlayerObject)
     }
 };
 
-class $modify(GJGameLevel)
-{
-	void savePercentage(int percent, bool p1, int clicks, int attempts, bool valid)
-    {
+class $modify(EndLevelLayer) {
+	void customSetup() {
+		EndLevelLayer::customSetup();
+
+		if (!softToggle || actualDelta) {
+			std::string text;
+
+			if (softToggle && actualDelta) text = "PB";
+			else if (actualDelta) text = "CBF+PB";
+			else text = "CBF";
+
+			cocos2d::CCSize size = cocos2d::CCDirector::sharedDirector()->getWinSize();
+			CCLabelBMFont* indicator = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
+
+			indicator->setPosition({ size.width, size.height });
+			indicator->setAnchorPoint({ 1.0f, 1.0f });
+			indicator->setOpacity(30);
+			indicator->setScale(0.2f);
+
+			this->addChild(indicator);
+		}
+	}
+};
+
+#ifdef GEODE_IS_WINDOWS
+LPVOID pBuf;
+class $modify(CreatorLayer) {
+	bool init() {
+		if (!CreatorLayer::init()) return false;
+
+		DWORD waitResult = WaitForSingleObject(hMutex, 5);
+		if (waitResult == WAIT_OBJECT_0) {
+			if (static_cast<LinuxInputEvent*>(pBuf)[0].type == 3 && !softToggle) {
+				log::error("Linux input failed");
+				FLAlertLayer* popup = FLAlertLayer::create(
+					"CBF Linux", 
+					"Failed to read input devices.\nOn most distributions, this can be resolved with the following command: <cr>sudo usermod -aG input $USER</c> (reboot afterward; this will make your system slightly less secure).\nIf the issue persists, please contact the mod developer.", 
+					"OK"
+				);
+				popup->m_scene = this;
+				popup->show();
+			}
+			ReleaseMutex(hMutex);
+		}
+		else if (waitResult == WAIT_TIMEOUT) {
+			log::error("Mutex stalling");
+		}
+		else {
+			log::error("CreatorLayer WaitForSingleObject failed: {}", GetLastError());
+		}
+		return true;
+	} 
+};
+#endif
+
+class $modify(GJGameLevel) {
+	void savePercentage(int percent, bool p1, int clicks, int attempts, bool valid) {
 		valid = (
-			 Mod::get()->getSettingValue<bool>("soft-toggle") &&
-			!Mod::get()->getSettingValue<bool>("actual-delta")
+			Mod::get()->getSettingValue<bool>("soft-toggle")
+			&& !Mod::get()->getSettingValue<bool>("actual-delta")
+			|| this->m_stars == 0
 		);
 
 		GJGameLevel::savePercentage(percent, p1, clicks, attempts, valid);
 	}
-};
-
-class $modify(EndLevelLayer)
-{
-    void customSetup()
-    {
-        EndLevelLayer::customSetup();
-
-        if (!softToggle || actualDelta) {
-            std::string text;
-
-            if (softToggle && actualDelta)
-                text = "PB";
-            else if (actualDelta)
-                text = "CBF+PB";
-            else
-                text = "CBF";
-
-            cocos2d::CCSize size     = cocos2d::CCDirector::sharedDirector()->getWinSize();
-            CCLabelBMFont *indicator = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-
-            indicator->setPosition({ size.width, size.height });
-            indicator->setAnchorPoint({ 1.0f, 1.0f });
-            indicator->setOpacity(30);
-            indicator->setScale(0.2f);
-
-            this->addChild(indicator);
-        }
-    }
 };
 
 #ifdef GEODE_IS_WINDOWS
@@ -577,11 +623,81 @@ $on_mod(Loaded)
 
     actualDelta = Mod::get()->getSettingValue<bool>("actual-delta");
     listenForSettingChanges("actual-delta", +[](bool enable) { actualDelta = enable; });
-
+#ifdef GEODE_IS_MACOS
     softToggle = Mod::get()->getSettingValue<bool>("soft-toggle");
     listenForSettingChanges("soft-toggle", +[](bool enable) { softToggle = enable; });
+#elif defined (GEODE_IS_WINDOWS)
+    HANDLE gdMutex;
 
-#ifdef GEODE_IS_WINDOWS
+    threadPriority = Mod::get()->getSettingValue<bool>("thread-priority");
+
+	HMODULE ntdll = GetModuleHandle("ntdll.dll");
+	wine_get_host_version wghv = (wine_get_host_version)GetProcAddress(ntdll, "wine_get_host_version");
+	if (wghv) {
+		const char* sysname;
+		const char* release;
+		wghv(&sysname, &release);
+
+		std::string sys = sysname;
+		log::info("Wine {}", sys);
+		if (sys == "Linux") { // background raw keyboard input doesn't work in Wine
+            isLinux = true;
+
+            hSharedMem = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(LinuxInputEvent[BUFFER_SIZE]), "LinuxSharedMemory");
+			if (hSharedMem == NULL) {
+				log::error("Failed to create file mapping: {}", GetLastError());
+				return;
+			}
+
+			pBuf = MapViewOfFile(hSharedMem, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(LinuxInputEvent[BUFFER_SIZE]));
+			if (pBuf == NULL) {
+        		log::error("Failed to map view of file: {}", GetLastError());
+				CloseHandle(hSharedMem);
+        		return;
+    		}
+
+			hMutex = CreateMutex(NULL, FALSE, "CBFLinuxMutex");
+			if (hMutex == NULL) {
+				log::error("Failed to create shared memory mutex: {}", GetLastError());
+				CloseHandle(hSharedMem);
+				return;
+			}
+
+			gdMutex = CreateMutex(NULL, TRUE, "CBFWatchdogMutex"); // will be released when gd closes
+			if (gdMutex == NULL) {
+				log::error("Failed to create watchdog mutex: {}", GetLastError());
+				CloseHandle(hMutex);
+				CloseHandle(hSharedMem);
+				return;
+			}
+
+			SECURITY_ATTRIBUTES sa;
+			sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+			sa.bInheritHandle = TRUE;
+			sa.lpSecurityDescriptor = NULL;
+
+			STARTUPINFO si;
+			PROCESS_INFORMATION pi;
+			ZeroMemory(&si, sizeof(si));
+			si.cb = sizeof(si);
+			ZeroMemory(&pi, sizeof(pi));
+
+			std::string path = "\"" + CCFileUtils::get()->fullPathForFilename("linux-input.exe.so"_spr, true) + "\"";
+			std::replace(path.begin(), path.end(), '\\', '/');
+			
+			std::unique_ptr<char[]> cmd(new char[path.size() + 1]);
+			strcpy(cmd.get(), path.c_str());
+
+			if (!CreateProcess(NULL, cmd.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+				log::error("Failed to launch Linux input program: {}", GetLastError());
+				CloseHandle(hMutex);
+				CloseHandle(gdMutex);
+				CloseHandle(hSharedMem);
+				return;
+			}
+		}
+	}
+
     toggleMod(Mod::get()->getSettingValue<bool>("soft-toggle"));
     listenForSettingChanges("soft-toggle", toggleMod);
 
