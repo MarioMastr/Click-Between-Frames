@@ -201,19 +201,14 @@ int convertKeyCodes(int code)
         return 0;
 }
 
-/*
 @interface EAGLView : NSOpenGLView
 @end
 
-#ifdef GEODE_IS_MACOS
 static IMP keyDownExecOIMP;
 void keyDownExec(EAGLView *self, SEL sel, NSEvent *event)
 {
     if (PlayLayer::get() || LevelEditorLayer::get()) {
         uint64_t timestamp = mach_absolute_time();
-        std::array<std::unordered_set<size_t>, 6> binds;
-        std::lock_guard lock(keybindsLock);
-        binds              = inputBinds;
         bool shouldEmplace = true;
         State inputState = State::Press;
         Player player     = Player1;
@@ -227,29 +222,30 @@ void keyDownExec(EAGLView *self, SEL sel, NSEvent *event)
                 heldInputs.erase(windows);
         }
 
-        if (binds[p1Jump].contains(windows))
+        if (inputBinds[p1Jump].contains(windows))
             inputType = PlayerButton::Jump;
-        else if (binds[p1Left].contains(windows))
+        else if (inputBinds[p1Left].contains(windows))
             inputType = PlayerButton::Left;
-        else if (binds[p1Right].contains(windows))
+        else if (inputBinds[p1Right].contains(windows))
             inputType = PlayerButton::Right;
         else {
             player = Player2;
-            if (binds[p2Jump].contains(windows))
+            if (inputBinds[p2Jump].contains(windows))
                 inputType = PlayerButton::Jump;
-            else if (binds[p2Left].contains(windows))
+            else if (inputBinds[p2Left].contains(windows))
                 inputType = PlayerButton::Left;
-            else if (binds[p2Right].contains(windows))
+            else if (inputBinds[p2Right].contains(windows))
                 inputType = PlayerButton::Right;
+            else
+                shouldEmplace = false;
         }
 
         if (!inputState)
             heldInputs.emplace(windows);
-        if (!shouldEmplace)
-            return;
-        {
+
+        if (shouldEmplace) {
             std::lock_guard lock(inputQueueLock);
-        inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
+            inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
         }
     }
 
@@ -261,9 +257,6 @@ void keyUpExec(EAGLView *self, SEL sel, NSEvent *event)
 {
     if (PlayLayer::get() || LevelEditorLayer::get()) {
         uint64_t timestamp = mach_absolute_time();
-        std::array<std::unordered_set<size_t>, 6> binds;
-        std::lock_guard lock(keybindsLock);
-        binds              = inputBinds;
         bool shouldEmplace = true;
         State inputState = State::Release;
         Player player     = Player1;
@@ -277,29 +270,31 @@ void keyUpExec(EAGLView *self, SEL sel, NSEvent *event)
                 heldInputs.erase(windows);
         }
 
-        if (binds[p1Jump].contains(windows))
+        if (inputBinds[p1Jump].contains(windows))
             inputType = PlayerButton::Jump;
-        else if (binds[p1Left].contains(windows))
+        else if (inputBinds[p1Left].contains(windows))
             inputType = PlayerButton::Left;
-        else if (binds[p1Right].contains(windows))
+        else if (inputBinds[p1Right].contains(windows))
             inputType = PlayerButton::Right;
         else {
             player = Player2;
-            if (binds[p2Jump].contains(windows))
+            if (inputBinds[p2Jump].contains(windows))
                 inputType = PlayerButton::Jump;
-            else if (binds[p2Left].contains(windows))
+            else if (inputBinds[p2Left].contains(windows))
                 inputType = PlayerButton::Left;
-            else if (binds[p2Right].contains(windows))
+            else if (inputBinds[p2Right].contains(windows))
                 inputType = PlayerButton::Right;
+            else
+                shouldEmplace = false;
         }
 
         if (!inputState)
             heldInputs.emplace(windows);
-        if (!shouldEmplace)
-            return;
-
-        std::lock_guard lock2(inputQueueLock);
-        inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
+            
+        if (shouldEmplace) {
+            std::lock_guard lock(inputQueueLock);
+            inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
+        }
     }
 
     reinterpret_cast<decltype(&keyUpExec)>(keyUpExecOIMP)(self, sel, event);
@@ -308,71 +303,43 @@ void keyUpExec(EAGLView *self, SEL sel, NSEvent *event)
 static IMP mouseDownExecOIMP;
 void mouseDownExec(EAGLView *self, SEL sel, NSEvent *event)
 {
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+    if (PlayLayer::get() || LevelEditorLayer::get())
+        inputQueue.emplace(InputEvent{ mach_absolute_time(), PlayerButton::Jump, Press, true });
 
     reinterpret_cast<decltype(&mouseDownExec)>(mouseDownExecOIMP)(self, sel, event);
-}
-
-static IMP mouseDraggedExecOIMP;
-void mouseDraggedExec(EAGLView *self, SEL sel, NSEvent *event)
-{
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
-
-    reinterpret_cast<decltype(&mouseDraggedExec)>(mouseDraggedExecOIMP)(self, sel, event);
 }
 
 static IMP mouseUpExecOIMP;
 void mouseUpExec(EAGLView *self, SEL sel, NSEvent *event)
 {
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
+    if (PlayLayer::get() || LevelEditorLayer::get())
+        inputQueue.emplace(InputEvent{ mach_absolute_time(), PlayerButton::Jump, Release, true });
 
     reinterpret_cast<decltype(&mouseUpExec)>(mouseUpExecOIMP)(self, sel, event);
 }
-#endif
 
-#ifdef GEODE_IS_IOS
-static IMP touchesBeganOIMP;
-void touchesBegan(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
+static IMP rightMouseDownExecOIMP;
+void rightMouseDownExec(EAGLView *self, SEL sel, NSEvent *event)
 {
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
-    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
+    if ((PlayLayer::get() || LevelEditorLayer::get()) && enableRightClick.load())
+        inputQueue.emplace(InputEvent{ mach_absolute_time(), PlayerButton::Jump, Press, false });
 
-    reinterpret_cast<decltype(&touchesBegan)>(touchesBeganOIMP)(self, sel, touches, event);
+    reinterpret_cast<decltype(&mouseDownExec)>(rightMouseDownExecOIMP)(self, sel, event);
 }
 
-static IMP touchesMovedOIMP;
-void touchesMoved(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
+static IMP rightMouseUpExecOIMP;
+void rightMouseUpExec(EAGLView *self, SEL sel, NSEvent *event)
 {
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
-    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
+    if ((PlayLayer::get() || LevelEditorLayer::get()) && enableRightClick.load())
+        inputQueue.emplace(InputEvent{ mach_absolute_time(), PlayerButton::Jump, Release, false });
 
-    reinterpret_cast<decltype(&touchesMoved)>(touchesMovedOIMP)(self, sel, touches, event);
+    reinterpret_cast<decltype(&mouseUpExec)>(rightMouseUpExecOIMP)(self, sel, event);
 }
-
-static IMP touchesEndedOIMP;
-void touchesEnded(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
-{
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
-    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
-
-    reinterpret_cast<decltype(&touchesEnded)>(touchesEndedOIMP)(self, sel, touches, event);
-}
-
-static IMP touchesCancelledOIMP;
-void touchesCancelled(EAGLView *self, SEL sel, NSSet *touches, NSEvent *event)
-{
-    auto timestamp = static_cast<std::uint64_t>([event timestamp] * 1000.0);
-    ExtendedCCTouchDispatcher::setTimestamp(timestamp);
-
-    reinterpret_cast<decltype(&touchesCancelled)>(touchesCancelledOIMP)(self, sel, touches, event);
-}
-#endif
 
 $execute
 {
     auto eaglView = objc_getClass("EAGLView");
 
-#ifdef GEODE_IS_MACOS
     auto keyDownExecMethod = class_getInstanceMethod(eaglView, @selector(keyDownExec:));
     keyDownExecOIMP        = method_getImplementation(keyDownExecMethod);
     method_setImplementation(keyDownExecMethod, (IMP)&keyDownExec);
@@ -385,35 +352,20 @@ $execute
     mouseDownExecOIMP        = method_getImplementation(mouseDownExecMethod);
     method_setImplementation(mouseDownExecMethod, (IMP)&mouseDownExec);
 
-    auto mouseDraggedExecMethod = class_getInstanceMethod(eaglView, @selector(mouseDraggedExec:));
-    mouseDraggedExecOIMP        = method_getImplementation(mouseDraggedExecMethod);
-    method_setImplementation(mouseDraggedExecMethod, (IMP)&mouseDraggedExec);
-
     auto mouseUpExecMethod = class_getInstanceMethod(eaglView, @selector(mouseUpExec:));
     mouseUpExecOIMP        = method_getImplementation(mouseUpExecMethod);
     method_setImplementation(mouseUpExecMethod, (IMP)&mouseUpExec);
-#endif
 
-#ifdef GEODE_IS_IOS
-    auto touchesBeganMethod = class_getInstanceMethod(eaglView, @selector(touchesBegan:withEvent:));
-    touchesBeganOIMP        = method_getImplementation(touchesBeganMethod);
-    method_setImplementation(touchesBeganMethod, (IMP)&touchesBegan);
+    auto rightMouseDownExecMethod = class_getInstanceMethod(eaglView, @selector(rightMouseDownExec:));
+    rightMouseDownExecOIMP        = method_getImplementation(rightMouseDownExecMethod);
+    method_setImplementation(rightMouseDownExecMethod, (IMP)&rightMouseDownExec);
 
-    auto touchesMovedMethod = class_getInstanceMethod(eaglView, @selector(touchesMoved:withEvent:));
-    touchesMovedOIMP        = method_getImplementation(touchesMovedMethod);
-    method_setImplementation(touchesMovedMethod, (IMP)&touchesMoved);
-
-    auto touchesEndedMethod = class_getInstanceMethod(eaglView, @selector(touchesEnded:withEvent:));
-    touchesEndedOIMP        = method_getImplementation(touchesEndedMethod);
-    method_setImplementation(touchesEndedMethod, (IMP)&touchesEnded);
-
-    auto touchesCancelledMethod = class_getInstanceMethod(eaglView, @selector(touchesCancelled:withEvent:));
-    touchesCancelledOIMP        = method_getImplementation(touchesCancelledMethod);
-    method_setImplementation(touchesCancelledMethod, (IMP)&touchesCancelled);
-#endif
+    auto rightMouseUpExecMethod = class_getInstanceMethod(eaglView, @selector(rightMouseUpExec:));
+    rightMouseUpExecOIMP        = method_getImplementation(rightMouseUpExecMethod);
+    method_setImplementation(rightMouseUpExecMethod, (IMP)&rightMouseUpExec);
 }
-*/
 
+/*
 void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
 {
     NSEventType type;
@@ -598,3 +550,4 @@ $execute
     s_originalSendEventIMP = method_getImplementation(method);
     method_setImplementation(method, (IMP)&sendEvent);
 }
+*/

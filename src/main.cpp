@@ -7,7 +7,7 @@
 #include <Geode/loader/SettingEvent.hpp>
 
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/CCEGLView.hpp>
+#include <Geode/modify/CCDirector.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/GJGameLevel.hpp>
 #include <Geode/modify/CreatorLayer.hpp>
@@ -106,7 +106,8 @@ void updateInputQueueAndTime(int stepCount) {
 			while (true) {
 				InputEvent front;
 				bool empty = inputQueueCopy.empty();
-				if (!empty) front = inputQueueCopy.front();
+				if (!empty)
+					front = inputQueueCopy.front();
 
 				if (!empty && front.time - lastFrameTime < stepDelta * (i + 1)) {
 					double dFactor = static_cast<double>((front.time - lastFrameTime) % stepDelta) / stepDelta;
@@ -134,10 +135,8 @@ Step updateDeltaFactorAndInput() {
 	double deltaFactor = front.deltaFactor;
 
 	if (nextInput.time != 0) {
-		PlayLayer* playLayer = PlayLayer::get();
-
 		enableInput = true;
-		playLayer->handleButton(!nextInput.inputState, (int)nextInput.inputType, nextInput.isPlayer1);
+		PlayLayer::get()->handleButton(!nextInput.inputState, (int)nextInput.inputType, nextInput.isPlayer1);
 		enableInput = false;
 	}
 
@@ -215,14 +214,17 @@ class $modify(PlayLayer) {
 
 bool mouseFix;
 
-class $modify(CCEGLView) {
-	void pollInputEvents() {
+class $modify(CCDirector) {
+	void drawScene() {
 		PlayLayer* playLayer = PlayLayer::get();
 		CCNode* par;
 
 		if (!lateCutoff && !isLinux) {
+#ifdef GEODE_IS_MACOS
 			currentFrameTime = mach_absolute_time();
+#elif defined(GEODE_IS_WINDOWS)
 			QueryPerformanceCounter(&currentFrameTime);
+#endif
 		}
 
 		if (softToggle
@@ -243,11 +245,13 @@ class $modify(CCEGLView) {
 			}
 		}
 		else if (mouseFix && !skipUpdate) {
+#if defined(GEODE_IS_WINDOWS)
 			MSG msg;
 			while (PeekMessage(&msg, NULL, WM_MOUSEFIRST + 1, WM_MOUSELAST, PM_REMOVE)); // clear mouse inputs from message queue
+#endif
 		}
 
-		CCEGLView::pollInputEvents();
+		CCDirector::drawScene();
 	}
 };
 
@@ -264,42 +268,27 @@ class $modify(MyGJBGL, GJBaseGameLayer) {
 
     float getModifiedDelta(float delta)
     {
-        float m_timeWarp;     // s2
-        double v4;            // d3
-        bool v5;              // nf
-        double v6;            // d2
-        float v7;             // s0
-        double v8;            // d0
-        float v9;             // s1
-        double modifiedDelta; // d1
+        double modifiedDelta;
+		double timeWarp;
 
         if (this->m_resumeTimer >= 1) {
             --this->m_resumeTimer;
             delta = 0.0;
         }
-        m_timeWarp = this->m_gameState.m_timeWarp;
-        v4         = (float)(m_timeWarp * 0.0041667);
-        v5         = m_timeWarp < 1.0;
-        v6         = 0.00416666688;
-        if (v5)
-            v6 = v4;
-        v7              = this->m_unk3248 + delta;
-        v8              = v7;
-        v9              = v8 / v6;
-        modifiedDelta   = v6 * (double)(int)llroundf(v9);
-        this->m_unk3248 = v8 - modifiedDelta;
+		timeWarp = this->m_gameState.m_timeWarp * 0.004166667;
+		if (this->m_gameState.m_timeWarp > 1.0) {
+			timeWarp = 0.004166666883975267;
+		}
+		modifiedDelta = timeWarp * ((this->m_unk3248 + delta) / timeWarp);
+		this->m_unk3248 = ((this->m_unk3248 + delta) - modifiedDelta);
 
         if (PlayLayer::get()) {
             if (actualDelta)
                 modifiedDelta = CCDirector::sharedDirector()->getActualDeltaTime() * this->m_gameState.m_timeWarp;
 
             if (modifiedDelta > 0.0) {
-                Loader::get()->queueInMainThread([&] 
-				{
-					const int stepCount = std::round(std::max(1.0, ((modifiedDelta * 60.0) / std::min(1.0f, this->m_gameState.m_timeWarp))
-                                                               * 4)); // not sure if this is different from (delta * 240) / timewarp
+					const int stepCount = std::round(std::max(1.0, ((modifiedDelta * 60.0) / std::min(1.0f, this->m_gameState.m_timeWarp)) * 4)); // not sure if this is different from (delta * 240) / timewarp
 					updateInputQueueAndTime(stepCount);
-				});
             }
             else {
                 skipUpdate = true;
@@ -311,8 +300,8 @@ class $modify(MyGJBGL, GJBaseGameLayer) {
 
 #ifdef GEODE_IS_MACOS
 	void update(float p0) {
-		MyGJBGL::getModifiedDelta(p0);
-        GJBaseGameLayer::update(p0);
+		float newDelta = MyGJBGL::getModifiedDelta(p0);
+        GJBaseGameLayer::update(newDelta);
     }
 #endif
 };
@@ -517,9 +506,7 @@ HANDLE gdMutex;
 #endif
 
 $on_mod(Loaded) {
-	toggleMod(Mod::get()->getSettingValue<bool>("soft-toggle"));
-	listenForSettingChanges("soft-toggle", toggleMod);
-
+#ifdef GEODE_IS_MACOS
 	safeMode = Mod::get()->getSettingValue<bool>("safe-mode");
 	listenForSettingChanges("safe-mode", +[](bool enable) {
 		safeMode = enable;
