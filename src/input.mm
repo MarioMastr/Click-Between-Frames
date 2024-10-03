@@ -201,6 +201,7 @@ int convertKeyCodes(int code)
         return 0;
 }
 
+/*
 @interface EAGLView : NSOpenGLView
 @end
 
@@ -246,9 +247,10 @@ void keyDownExec(EAGLView *self, SEL sel, NSEvent *event)
             heldInputs.emplace(windows);
         if (!shouldEmplace)
             return;
-
-        std::lock_guard lock2(inputQueueLock);
+        {
+            std::lock_guard lock(inputQueueLock);
         inputQueue.emplace(InputEvent{ timestamp, inputType, inputState, player });
+        }
     }
 
     reinterpret_cast<decltype(&keyDownExec)>(keyDownExecOIMP)(self, sel, event);
@@ -410,20 +412,16 @@ $execute
     method_setImplementation(touchesCancelledMethod, (IMP)&touchesCancelled);
 #endif
 }
+*/
 
-/*
 void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
 {
     NSEventType type;
-    PlayerButton inputType;
-    bool inputState;
-    bool player;
+	PlayerButton inputType;
+	bool inputState;
+	bool player1;
+    bool shouldEmplace;
     uint64_t time;
-    std::array<std::unordered_set<size_t>, 6> binds;
-    std::lock_guard lock(keybindsLock);
-    std::lock_guard lock2(inputQueueLock);
-    binds              = inputBinds;
-    bool shouldEmplace = true;
     int windows;
 
     if (PlayLayer::get() || LevelEditorLayer::get()) {
@@ -434,9 +432,10 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(keyDown:) with:event];
 
                     inputState = State::Press;
-                    player     = Player1;
+                    player1    = true;
                     time       = mach_absolute_time();
                     windows    = convertKeyCodes([event keyCode]);
+                    shouldEmplace = true;
 
                     if (heldInputs.contains(windows)) {
                         if (!inputState)
@@ -444,28 +443,38 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                         else
                             heldInputs.erase(windows);
                     }
+                    
+{
+                    std::lock_guard lock(keybindsLock);
 
-                    if (binds[p1Jump].contains(windows))
+                    if (inputBinds[p1Jump].contains(windows))
                         inputType = PlayerButton::Jump;
-                    else if (binds[p1Left].contains(windows))
+                    else if (inputBinds[p1Left].contains(windows))
                         inputType = PlayerButton::Left;
-                    else if (binds[p1Right].contains(windows))
+                    else if (inputBinds[p1Right].contains(windows))
                         inputType = PlayerButton::Right;
                     else {
-                        player = Player2;
-                        if (binds[p2Jump].contains(windows))
+                        player1 = false;
+                        if (inputBinds[p2Jump].contains(windows))
                             inputType = PlayerButton::Jump;
-                        else if (binds[p2Left].contains(windows))
+                        else if (inputBinds[p2Left].contains(windows))
                             inputType = PlayerButton::Left;
-                        else if (binds[p2Right].contains(windows))
+                        else if (inputBinds[p2Right].contains(windows))
                             inputType = PlayerButton::Right;
+                        else shouldEmplace = false;
                     }
+}
+
 
                     if (!inputState)
                         heldInputs.emplace(windows);
-                    if (!shouldEmplace)
-                        return;
-                    inputQueue.emplace(InputEvent{ time, inputType, inputState, player });
+
+{
+                    std::lock_guard lock(inputQueueLock);
+                    if (shouldEmplace)
+                        inputQueue.emplace(InputEvent{ time, inputType, inputState, player1 });
+}
+
 
                     return;
                 default: break;
@@ -478,9 +487,10 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                     [[[self mainWindow] firstResponder] tryToPerform:@selector(keyUp:) with:event];
 
                     inputState = State::Release;
-                    player     = Player1;
+                    player1    = true;
                     time       = mach_absolute_time();
                     windows    = convertKeyCodes([event keyCode]);
+                    shouldEmplace = true;
 
                     if (heldInputs.contains(windows)) {
                         if (!inputState)
@@ -489,27 +499,35 @@ void sendEvent(NSApplication *self, SEL sel, NSEvent *event)
                             heldInputs.erase(windows);
                     }
 
-                    if (binds[p1Jump].contains(windows))
+{
+                    std::lock_guard lock(keybindsLock);
+
+                    if (inputBinds[p1Jump].contains(windows))
                         inputType = PlayerButton::Jump;
-                    else if (binds[p1Left].contains(windows))
+                    else if (inputBinds[p1Left].contains(windows))
                         inputType = PlayerButton::Left;
-                    else if (binds[p1Right].contains(windows))
+                    else if (inputBinds[p1Right].contains(windows))
                         inputType = PlayerButton::Right;
                     else {
-                        player = Player2;
-                        if (binds[p2Jump].contains(windows))
+                        player1 = false;
+                        if (inputBinds[p2Jump].contains(windows))
                             inputType = PlayerButton::Jump;
-                        else if (binds[p2Left].contains(windows))
+                        else if (inputBinds[p2Left].contains(windows))
                             inputType = PlayerButton::Left;
-                        else if (binds[p2Right].contains(windows))
+                        else if (inputBinds[p2Right].contains(windows))
                             inputType = PlayerButton::Right;
+                        else shouldEmplace = false;
                     }
+}
 
                     if (!inputState)
                         heldInputs.emplace(windows);
-                    if (!shouldEmplace)
-                        return;
-                    inputQueue.emplace(InputEvent{ time, inputType, inputState, player });
+                    
+{
+                    std::lock_guard lock(inputQueueLock);
+                    if (shouldEmplace)
+                        inputQueue.emplace(InputEvent{ time, inputType, inputState, player1 });
+}
 
                     return;
                 default: break;
@@ -580,4 +598,3 @@ $execute
     s_originalSendEventIMP = method_getImplementation(method);
     method_setImplementation(method, (IMP)&sendEvent);
 }
-*/
