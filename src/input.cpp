@@ -16,14 +16,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	PlayerButton inputType;
 	bool inputState;
 	bool player1;
+	
+	LPVOID pData;
+	switch (uMsg) {
+	case WM_INPUT: {
 
-    QueryPerformanceCounter(&time);
-
-    LPVOID pData;
-    switch (uMsg) {
-        case WM_INPUT: {
-            UINT dwSize;
-            GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
+		UINT dwSize;
+		GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
 
             auto lpb = std::unique_ptr<BYTE[]>(new BYTE[dwSize]);
             if (!lpb) {
@@ -33,11 +32,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 log::debug("GetRawInputData does not return correct size");
             }
 
-            RAWINPUT *raw = (RAWINPUT *)lpb.get();
-            switch (raw->header.dwType) {
-                case RIM_TYPEKEYBOARD: {
-                    USHORT vkey = raw->data.keyboard.VKey;
-                    inputState  = raw->data.keyboard.Flags & RI_KEY_BREAK;
+		RAWINPUT* raw = (RAWINPUT*)lpb.get();
+		switch (raw->header.dwType) {
+		case RIM_TYPEKEYBOARD: {
+			QueryPerformanceCounter(&time);
+
+			USHORT vkey = raw->data.keyboard.VKey;
+			inputState = raw->data.keyboard.Flags & RI_KEY_BREAK;
 
                     if (vkey >= VK_NUMPAD0 && vkey <= VK_NUMPAD9)
                         vkey -= 0x30; // make numpad numbers work with customkeybinds
@@ -89,6 +90,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 				else if (flags & RI_MOUSE_BUTTON_2_UP) inputState = Release;
 				else return 0;
 			}
+
+			QueryPerformanceCounter(&time); // dont call on mouse move events
 			break;
 		}
 		default:

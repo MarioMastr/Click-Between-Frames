@@ -7,7 +7,7 @@
 #include <Geode/loader/SettingEvent.hpp>
 
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/CCDirector.hpp>
+#include <Geode/modify/CCEGLView.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/GJGameLevel.hpp>
 #include <Geode/modify/CreatorLayer.hpp>
@@ -190,28 +190,46 @@ void newResetCollisionLog(PlayerObject* p) { // inlined in 2.206...
     p->m_unk50C              = -1;
 }
 
+bool softToggle; // cant just disable all hooks bc thatll cause a memory leak with inputQueue, may improve this in the future
+bool safeMode;
+
 class $modify(PlayLayer) {
 	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
 		updateKeybinds();
 		return PlayLayer::init(level, useReplay, dontCreateObjects);
 	}
+
+	void levelComplete() {
+		bool testMode = this->m_isTestMode;
+		if (safeMode && !softToggle) this->m_isTestMode = true;
+
+		PlayLayer::levelComplete();
+
+		this->m_isTestMode = testMode;
+	}
+
+	void showNewBest(bool p0, int p1, int p2, bool p3, bool p4, bool p5) {
+		if (!safeMode || softToggle) PlayLayer::showNewBest(p0, p1, p2, p3, p4, p5);
+	}
 };
 
-bool softToggle; // cant just disable all hooks bc thatll cause a memory leak with inputQueue, may improve this in the future
+bool mouseFix;
 
-class $modify(CCDirector) {
-	void drawScene() {
+class $modify(CCEGLView) {
+	void pollInputEvents() {
 		PlayLayer* playLayer = PlayLayer::get();
 		CCNode* par;
 
-		if (!lateCutoff) {
+		if (!lateCutoff && !isLinux) {
 			currentFrameTime = mach_absolute_time();
+			QueryPerformanceCounter(&currentFrameTime);
 		}
 
 		if (softToggle
 			|| !playLayer 
 			|| !(par = playLayer->getParent()) 
-			|| (getChildOfType<PauseLayer>(par, 0) != nullptr)) 
+			|| (getChildOfType<PauseLayer>(par, 0))
+			|| (getChildOfType<EndLevelLayer>(playLayer, 0)))
 		{
 			firstFrame = true;
 			skipUpdate = true;
@@ -224,8 +242,12 @@ class $modify(CCDirector) {
 				inputQueue = {};
 			}
 		}
+		else if (mouseFix && !skipUpdate) {
+			MSG msg;
+			while (PeekMessage(&msg, NULL, WM_MOUSEFIRST + 1, WM_MOUSELAST, PM_REMOVE)); // clear mouse inputs from message queue
+		}
 
-		CCDirector::drawScene();
+		CCEGLView::pollInputEvents();
 	}
 };
 
@@ -467,7 +489,7 @@ class $modify(GJGameLevel) {
 			|| this->m_stars == 0
 		);
 
-		GJGameLevel::savePercentage(percent, p1, clicks, attempts, valid);
+		if (!safeMode || softToggle) GJGameLevel::savePercentage(percent, p1, clicks, attempts, valid);
 	}
 };
 
@@ -495,10 +517,12 @@ HANDLE gdMutex;
 #endif
 
 $on_mod(Loaded) {
-#if !defined(GEODE_IS_WINDOWS)
-	lateCutoff = Mod::get()->getSettingValue<bool>("late-cutoff");
-	listenForSettingChanges("late-cutoff", +[](bool enable) {
-		lateCutoff = enable;
+	toggleMod(Mod::get()->getSettingValue<bool>("soft-toggle"));
+	listenForSettingChanges("soft-toggle", toggleMod);
+
+	safeMode = Mod::get()->getSettingValue<bool>("safe-mode");
+	listenForSettingChanges("safe-mode", +[](bool enable) {
+		safeMode = enable;
 	});
 
 	actualDelta = Mod::get()->getSettingValue<bool>("actual-delta");
@@ -508,6 +532,16 @@ $on_mod(Loaded) {
 #else
 	toggleMod(Mod::get()->getSettingValue<bool>("soft-toggle"));
 	listenForSettingChanges("soft-toggle", toggleMod);
+
+	mouseFix = Mod::get()->getSettingValue<bool>("mouse-fix");
+	listenForSettingChanges("mouse-fix", +[](bool enable) {
+		mouseFix = enable;
+	});
+
+	lateCutoff = Mod::get()->getSettingValue<bool>("late-cutoff");
+	listenForSettingChanges("late-cutoff", +[](bool enable) {
+		lateCutoff = enable;
+	});
 
 	threadPriority = Mod::get()->getSettingValue<bool>("thread-priority");
 
@@ -562,13 +596,9 @@ $on_mod(Loaded) {
 			si.cb = sizeof(si);
 			ZeroMemory(&pi, sizeof(pi));
 
-			std::string path = "\"" + CCFileUtils::get()->fullPathForFilename("linux-input.exe.so"_spr, true) + "\"";
-			std::replace(path.begin(), path.end(), '\\', '/');
-			
-			std::unique_ptr<char[]> cmd(new char[path.size() + 1]);
-			strcpy(cmd.get(), path.c_str());
+			std::string path = CCFileUtils::get()->fullPathForFilename("linux-input.exe.so"_spr, true);
 
-			if (!CreateProcess(NULL, cmd.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+			if (!CreateProcess(path.c_str(), NULL, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
 				log::error("Failed to launch Linux input program: {}", GetLastError());
 				CloseHandle(hMutex);
 				CloseHandle(gdMutex);

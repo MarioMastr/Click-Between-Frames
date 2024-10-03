@@ -4,11 +4,11 @@
 		"win": "2.206",
 		"mac": "2.206"
 	},
-	"version": "v1.2.1",
+	"version": "v1.2.3",
 	"id": "syzzi.click_between_frames",
 	"name": "Click Between Frames",
 	"developer": "syzzi",
-	"description": "Allows inputs to register between frames. Like TPS Bypass or Draw Divide, but with less lag and fewer physics bugs.",
+	"description": "Allows inputs to register between frames.",
 	"dependencies": [
 		{
 			"id": "geode.custom-keybinds",
@@ -29,9 +29,25 @@
 		"enhancement"
 	],
 	"settings": {
+		"functionality": {
+			"name": "Functionality",
+			"type": "title"
+		},
 		"soft-toggle": {
 			"name": "Disable CBF",
 			"description": "Disable CBF without needing to restart GD. This option does not disable physics bypass if you have it enabled!",
+			"type": "bool",
+			"default": false
+		},
+		"safe-mode": {
+			"name": "Safe Mode",
+			"description": "Disable progress & stats on rated levels.",
+			"type": "bool",
+			"default": false
+		},
+		"actual-delta": {
+			"name": "Physics Bypass",
+			"description": "Reduces stuttering on some FPS values. Active even if \"Disable CBF\" is checked.\n\nTHIS WILL ALTER PHYSICS AND MAY BREAK SOME LEVELS! DON'T USE THIS IF YOUR LIST/LEADERBOARD BANS PHYSICS BYPASS!",
 			"type": "bool",
 			"default": false
 		},
@@ -41,15 +57,19 @@
 			"type": "bool",
 			"default": false
 		},
-		"late-cutoff": {
-			"name": "Late Input Cutoff",
-			"description": "Check for inputs near the end of the frame instead of the start. \n\nSlightly reduces input lag, but also slightly reduces precision. May help if you are experiencing dropped or delayed inputs.",
+		"performance": {
+			"name": "Performance",
+			"type": "title"
+		},
+		"mouse-fix": {
+			"name": "Reduce Mouse Lag",
+			"description": "Reduce lag when using high polling rate mice.\nRequires CBF to be enabled.\nExperimental, may break things.",
 			"type": "bool",
 			"default": false
 		},
-		"actual-delta": {
-			"name": "Physics Bypass",
-			"description": "Reduces stuttering on some FPS values. Active even if \"Disable CBF\" is checked. \n\nTHIS WILL ALTER PHYSICS AND MAY BREAK SOME LEVELS! DON'T USE THIS IF YOUR LIST/LEADERBOARD BANS PHYSICS BYPASS!",
+		"late-cutoff": {
+			"name": "Late Input Cutoff",
+			"description": "Check for inputs near the end of the frame instead of the start.\n\nSlightly reduces input lag, but also slightly hurts precision. May help if you are experiencing dropped or delayed inputs.",
 			"type": "bool",
 			"default": false
 		},
@@ -61,10 +81,11 @@
 			"requires-restart": true
 		}
 	},
-	"repository": "https://github.com/theyareonit/Click-Between-Frames",
+	"links": {
+		"source": "https://github.com/theyareonit/Click-Between-Frames"
+	},
 	"resources": {
 		"files": [
-			"resources/linux-input.exe",
 			"resources/linux-input.exe.so"
 		]
 	}
