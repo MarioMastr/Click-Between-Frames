@@ -1,8 +1,8 @@
 {
-	"geode": "3.8.1",
+	"geode": "4.0.0",
 	"gd": {
-		"win": "2.206",
-		"mac": "2.206"
+		"win": "2.2074",
+		"mac": "2.2074"
 	},
 	"version": "v1.2.3",
 	"id": "syzzi.click_between_frames",

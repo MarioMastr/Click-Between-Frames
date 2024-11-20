@@ -4,7 +4,7 @@
 #include <algorithm>
 
 #include <Geode/Geode.hpp>
-#include <Geode/loader/SettingEvent.hpp>
+#include <Geode/loader/SettingV3.hpp>
 
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/CCDirector.hpp>
@@ -230,8 +230,8 @@ class $modify(CCDirector) {
 		if (softToggle
 			|| !playLayer 
 			|| !(par = playLayer->getParent()) 
-			|| (getChildOfType<PauseLayer>(par, 0))
-			|| (getChildOfType<EndLevelLayer>(playLayer, 0)))
+			|| (getChild(par, 0))
+			|| (getChild(playLayer, 0)))
 		{
 			firstFrame = true;
 			skipUpdate = true;
@@ -279,8 +279,8 @@ class $modify(MyGJBGL, GJBaseGameLayer) {
 		if (this->m_gameState.m_timeWarp > 1.0) {
 			timeWarp = 0.004166666883975267;
 		}
-		modifiedDelta = timeWarp * ((this->m_unk3248 + delta) / timeWarp);
-		this->m_unk3248 = ((this->m_unk3248 + delta) - modifiedDelta);
+		modifiedDelta = timeWarp * ((this->m_extraDelta + delta) / timeWarp);
+		this->m_extraDelta = ((this->m_extraDelta + delta) - modifiedDelta);
 
         if (PlayLayer::get()) {
             if (actualDelta)
