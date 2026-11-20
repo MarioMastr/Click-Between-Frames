@@ -1,5 +1,7 @@
 #include "includes.hpp"
 
+#include <xinput.h>
+
 #include <cstdint>
 #include <atomic>
 
@@ -40,7 +42,7 @@ class $modify(CreatorLayer) {
 };
 
 void linuxHeartbeat() {
-	if (pSharedMem) pSharedMem->heartbeat++;
+	if (pSharedMem) pSharedMem->heartbeat += 1;
 }
 
 void linuxCheckInputs() {

@@ -31,8 +31,8 @@ struct Step {
 
 extern std::vector<struct PlayerButtonCommand> inputVector;
 
-extern std::array<std::unordered_set<size_t>, 6> inputBinds;
-extern std::unordered_set<uint16_t> heldInputs;
+extern std::array<std::set<int>, 6> inputBinds;
+extern std::set<int> heldInputs;
 
 extern bool enableRightClick;
 extern bool softToggle; // true -> cbf disabled

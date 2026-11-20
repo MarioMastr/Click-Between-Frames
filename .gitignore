@@ -53,6 +53,7 @@ build-*/
 
 # clangd
 .cache/
+compile_commands.json
 
 # Visual Studio
 .vs/

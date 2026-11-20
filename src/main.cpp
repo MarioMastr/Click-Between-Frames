@@ -40,8 +40,8 @@ bool firstFrame = true; // necessary to prevent accidental inputs at the start o
 bool skipUpdate = true; // true -> dont split steps during PlayerObject::update()
 bool linuxNative = false;
 
-std::array<std::unordered_set<size_t>, 6> inputBinds;
-std::unordered_set<uint16_t> heldInputs;
+std::array<std::set<int>, 6> inputBinds;
+std::set<int> heldInputs;
 
 /*
 this function copies over the input data and uses it to build a queue of physics steps
@@ -131,43 +131,25 @@ Step popStepQueue() {
 prepare list of keybinds for linux
 */
 void updateKeybinds() {
-	std::array<std::unordered_set<size_t>, 6> binds;
-	std::vector<geode::Keybind> v;
-	Mod* customKeybinds = Loader::get()->getLoadedMod("geode.custom-keybinds");
-	if (!customKeybinds) {
-		static bool checked = 0;
-		if (!checked) log::info("Custom keybinds not loaded.");
-		checked = 1;
+	std::array<std::set<int>, 6> binds;
 
-		inputBinds[p1Jump] = { KEY_Space, KEY_W, CONTROLLER_A, CONTROLLER_Up, CONTROLLER_RB };
-		inputBinds[p1Left] = { KEY_A, CONTROLLER_Left, CONTROLLER_LTHUMBSTICK_LEFT };
-		inputBinds[p1Right] = { KEY_D, CONTROLLER_Right, CONTROLLER_LTHUMBSTICK_RIGHT };
-
-		inputBinds[p2Jump] = { KEY_Up, CONTROLLER_LB };
-		inputBinds[p2Left] = { KEY_Left, CONTROLLER_RTHUMBSTICK_LEFT };
-		inputBinds[p2Right] = { KEY_Right, CONTROLLER_RTHUMBSTICK_RIGHT };
-		return;
-	}
+	int p1JumpAction  = 0x2711;
+	int p2JumpAction  = 0x2712;
+	int p1LeftAction  = 0x2713;
+	int p1RightAction = 0x2714;
+	int p2LeftAction  = 0x2715;
+	int p2RightAction = 0x2716;
 
 	enableRightClick = Mod::get()->getSettingValue<bool>("right-click");
 
-	v = customKeybinds->getSettingValue<std::vector<geode::Keybind>>("jump-p1");
-	for (int i = 0; i < v.size(); i++) binds[p1Jump].emplace(v[i].key);
+	std::map<int, std::set<int>> keybinds = GJKeybindManager::sharedState()->m_savedMovementBinds;
 
-	v = customKeybinds->getSettingValue<std::vector<geode::Keybind>>("move-left-p1");
-	for (int i = 0; i < v.size(); i++) binds[p1Left].emplace(v[i].key);
-
-	v = customKeybinds->getSettingValue<std::vector<geode::Keybind>>("move-right-p1");
-	for (int i = 0; i < v.size(); i++) binds[p1Right].emplace(v[i].key);
-
-	v = customKeybinds->getSettingValue<std::vector<geode::Keybind>>("jump-p2");
-	for (int i = 0; i < v.size(); i++) binds[p2Jump].emplace(v[i].key);
-
-	v = customKeybinds->getSettingValue<std::vector<geode::Keybind>>("move-left-p2");
-	for (int i = 0; i < v.size(); i++) binds[p2Left].emplace(v[i].key);
-
-	v = customKeybinds->getSettingValue<std::vector<geode::Keybind>>("move-right-p2");
-	for (int i = 0; i < v.size(); i++) binds[p2Right].emplace(v[i].key);
+	binds[p1Jump]  = keybinds[p1JumpAction];
+	binds[p2Jump]  = keybinds[p2JumpAction];
+	binds[p1Left]  = keybinds[p1LeftAction];
+	binds[p1Right] = keybinds[p1RightAction];
+	binds[p2Left]  = keybinds[p2LeftAction];
+	binds[p2Right] = keybinds[p2RightAction];
 
 	inputBinds = binds;
 }
@@ -226,11 +208,11 @@ int calculateStepCount(double delta, float timewarp, bool forceVanilla) {
 bool safeMode;
 
 class $modify(PlayLayer) {
-	bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+	bool init(GJGameLevel* level, bool dontCreateObjects) {
 		#ifdef GEODE_IS_WINDOWS
 		if (linuxNative) updateKeybinds(); // update keybinds when you enter a level (for linux)
 		#endif
-		bool result = PlayLayer::init(level, useReplay, dontCreateObjects);
+		bool result = PlayLayer::init(level, dontCreateObjects);
 		if (!softToggle) {
 			this->m_clickBetweenSteps = false;
 			this->m_clickOnSteps = false;

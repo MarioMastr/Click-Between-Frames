@@ -26,4 +26,15 @@ endif()
 
 add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 
+if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
+    include(ExternalProject)
+
+    ExternalProject_Add(
+        linux-input
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/linux/
+    )
+
+    add_dependencies(${PROJECT_NAME} linux-input)
+endif()
+
 setup_geode_mod(${PROJECT_NAME})
